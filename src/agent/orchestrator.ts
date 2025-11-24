@@ -1,7 +1,10 @@
 import { generateText, tool } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
 import { InternalMCPClient } from './mcp-client';
+
+export type LLMProvider = 'openai' | 'anthropic';
 
 export interface AgentResponse {
   answer: string;
@@ -18,23 +21,53 @@ export interface AgentResponse {
 
 export class AgentOrchestrator {
   private mcpClient: InternalMCPClient;
-  private anthropicProvider: ReturnType<typeof createAnthropic>;
+  private provider: LLMProvider;
+  private openaiProvider?: ReturnType<typeof createOpenAI>;
+  private anthropicProvider?: ReturnType<typeof createAnthropic>;
   private modelId: string;
 
-  constructor(rawgApiKey: string, anthropicApiKey: string, modelName?: string) {
-    if (!anthropicApiKey || anthropicApiKey.trim().length === 0) {
-      throw new Error('Anthropic API key is required and cannot be empty');
+  constructor(
+    rawgApiKey: string,
+    options: {
+      provider?: LLMProvider;
+      openaiApiKey?: string;
+      anthropicApiKey?: string;
+      modelName?: string;
     }
-    
+  ) {
     this.mcpClient = new InternalMCPClient(rawgApiKey);
-    this.modelId = modelName || 'claude-3-5-haiku-20241022';
     
-    try {
-      this.anthropicProvider = createAnthropic({
-        apiKey: anthropicApiKey.trim(),
-      });
-    } catch (error) {
-      throw new Error(`Failed to initialize Anthropic provider: ${error instanceof Error ? error.message : String(error)}`);
+    // Default to OpenAI
+    this.provider = options.provider || 'openai';
+    
+    // Initialize OpenAI provider
+    if (this.provider === 'openai') {
+      if (!options.openaiApiKey || options.openaiApiKey.trim().length === 0) {
+        throw new Error('OpenAI API key is required when using OpenAI provider');
+      }
+      try {
+        this.openaiProvider = createOpenAI({
+          apiKey: options.openaiApiKey.trim(),
+        });
+      } catch (error) {
+        throw new Error(`Failed to initialize OpenAI provider: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      // Default OpenAI model
+      this.modelId = options.modelName || 'gpt-4o-mini';
+    } else {
+      // Initialize Anthropic provider
+      if (!options.anthropicApiKey || options.anthropicApiKey.trim().length === 0) {
+        throw new Error('Anthropic API key is required when using Anthropic provider');
+      }
+      try {
+        this.anthropicProvider = createAnthropic({
+          apiKey: options.anthropicApiKey.trim(),
+        });
+      } catch (error) {
+        throw new Error(`Failed to initialize Anthropic provider: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      // Default Anthropic model
+      this.modelId = options.modelName || 'claude-3-5-haiku-20241022';
     }
   }
 
@@ -49,7 +82,15 @@ export class AgentOrchestrator {
   ): Promise<AgentResponse> {
     const tools = await this.buildTools();
 
-    const model = this.anthropicProvider(this.modelId);
+    // Get the appropriate model based on provider
+    let model;
+    if (this.provider === 'openai' && this.openaiProvider) {
+      model = this.openaiProvider(this.modelId);
+    } else if (this.provider === 'anthropic' && this.anthropicProvider) {
+      model = this.anthropicProvider(this.modelId);
+    } else {
+      throw new Error(`Provider ${this.provider} is not properly initialized`);
+    }
 
     const result = await generateText({
       model,

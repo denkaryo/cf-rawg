@@ -6,6 +6,7 @@ vi.mock('../../../src/agent/mcp-client');
 
 describe('Agent Orchestrator', () => {
   const mockRawgApiKey = 'test-rawg-key';
+  const mockOpenaiApiKey = 'test-openai-key';
   const mockAnthropicApiKey = 'test-anthropic-key';
   let orchestrator: AgentOrchestrator;
   let mockMcpClient: any;
@@ -19,7 +20,12 @@ describe('Agent Orchestrator', () => {
     };
 
     vi.mocked(InternalMCPClient).mockImplementation(() => mockMcpClient as any);
-    orchestrator = new AgentOrchestrator(mockRawgApiKey, mockAnthropicApiKey);
+    // Use OpenAI as default for tests
+    orchestrator = new AgentOrchestrator(mockRawgApiKey, {
+      provider: 'openai',
+      openaiApiKey: mockOpenaiApiKey,
+      anthropicApiKey: mockAnthropicApiKey,
+    });
   });
 
   test('converts MCP tools to AI SDK format', async () => {

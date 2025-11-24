@@ -26,9 +26,13 @@ export default {
         JSON.stringify({
           hasRawgKey: !!env.RAWG_API_KEY,
           rawgKeyLength: env.RAWG_API_KEY?.length || 0,
+          hasOpenAIKey: !!env.OPENAI_API_KEY,
+          openaiKeyLength: env.OPENAI_API_KEY?.length || 0,
+          openaiKeyPrefix: env.OPENAI_API_KEY?.substring(0, 10) || 'none',
           hasAnthropicKey: !!env.ANTHROPIC_API_KEY,
           anthropicKeyLength: env.ANTHROPIC_API_KEY?.length || 0,
           anthropicKeyPrefix: env.ANTHROPIC_API_KEY?.substring(0, 10) || 'none',
+          llmProvider: env.LLM_PROVIDER || 'openai',
         }),
         {
           headers: {
@@ -59,7 +63,10 @@ export default {
 
 interface Env {
   RAWG_API_KEY?: string;
+  OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
+  LLM_PROVIDER?: 'openai' | 'anthropic';
+  OPENAI_MODEL?: string;
   CLAUDE_MODEL?: string;
 }
 
@@ -77,20 +84,76 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
     );
   }
 
-  if (!env.ANTHROPIC_API_KEY) {
-    return new Response(
-      JSON.stringify({ 
-        error: 'ANTHROPIC_API_KEY not configured',
-        debug: 'Check .dev.vars file or Cloudflare dashboard'
-      }),
-      {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
-      }
-    );
+  // Determine provider (default to OpenAI)
+  const provider = (env.LLM_PROVIDER || 'openai') as 'openai' | 'anthropic';
+  
+  // Validate API keys based on provider
+  if (provider === 'openai') {
+    if (!env.OPENAI_API_KEY || env.OPENAI_API_KEY.trim().length === 0) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'OPENAI_API_KEY not configured',
+          debug: 'Check .dev.vars file or Cloudflare dashboard'
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
+    }
+    if (env.OPENAI_API_KEY.length < 10) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Invalid OPENAI_API_KEY',
+          debug: `Key length: ${env.OPENAI_API_KEY?.length || 0}`,
+          hasKey: !!env.OPENAI_API_KEY,
+          keyPrefix: env.OPENAI_API_KEY?.substring(0, 10) || 'none'
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
+    }
+  } else if (provider === 'anthropic') {
+    if (!env.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY.trim().length === 0) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'ANTHROPIC_API_KEY not configured',
+          debug: 'Check .dev.vars file or Cloudflare dashboard'
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
+    }
+    if (env.ANTHROPIC_API_KEY.length < 10) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Invalid ANTHROPIC_API_KEY',
+          debug: `Key length: ${env.ANTHROPIC_API_KEY?.length || 0}`,
+          hasKey: !!env.ANTHROPIC_API_KEY,
+          keyPrefix: env.ANTHROPIC_API_KEY?.substring(0, 10) || 'none'
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
+    }
   }
 
   try {
@@ -124,30 +187,13 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
       );
     }
 
-    if (!env.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY.length < 10) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Invalid ANTHROPIC_API_KEY',
-          debug: `Key length: ${env.ANTHROPIC_API_KEY?.length || 0}`,
-          hasKey: !!env.ANTHROPIC_API_KEY,
-          keyPrefix: env.ANTHROPIC_API_KEY?.substring(0, 10) || 'none'
-        }),
-        {
-          status: 500,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        }
-      );
-    }
-
-    const anthropicKey = env.ANTHROPIC_API_KEY.trim();
-    const orchestrator = new AgentOrchestrator(
-      env.RAWG_API_KEY,
-      anthropicKey,
-      env.CLAUDE_MODEL
-    );
+    // Create orchestrator with provider-specific options
+    const orchestrator = new AgentOrchestrator(env.RAWG_API_KEY!, {
+      provider,
+      openaiApiKey: env.OPENAI_API_KEY,
+      anthropicApiKey: env.ANTHROPIC_API_KEY,
+      modelName: provider === 'openai' ? env.OPENAI_MODEL : env.CLAUDE_MODEL,
+    });
 
     const typedMessages: Array<{ role: 'user' | 'assistant'; content: string }> = messages.map(msg => ({
       role: msg.role === 'user' ? 'user' : 'assistant',

@@ -3,23 +3,35 @@ import { AgentOrchestrator } from '../../src/agent/orchestrator';
 
 async function main() {
   const rawgApiKey = process.env.RAWG_API_KEY;
+  const openaiApiKey = process.env.OPENAI_API_KEY;
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+  const provider = (process.env.LLM_PROVIDER || 'openai') as 'openai' | 'anthropic';
 
   if (!rawgApiKey) {
     console.error('ERROR: RAWG_API_KEY environment variable is required');
     process.exit(1);
   }
 
-  if (!anthropicApiKey) {
+  if (provider === 'openai' && !openaiApiKey) {
+    console.error('ERROR: OPENAI_API_KEY environment variable is required');
+    console.error('Get your key from: https://platform.openai.com/api-keys');
+    process.exit(1);
+  }
+
+  if (provider === 'anthropic' && !anthropicApiKey) {
     console.error('ERROR: ANTHROPIC_API_KEY environment variable is required');
     console.error('Get your key from: https://console.anthropic.com/');
     process.exit(1);
   }
 
-  console.log('Testing Agent Orchestrator with REAL LLM (Claude Haiku)...\n');
-  console.log('This will make actual API calls to Anthropic and RAWG.\n');
+  console.log(`Testing Agent Orchestrator with REAL LLM (${provider === 'openai' ? 'OpenAI' : 'Claude Haiku'})...\n`);
+  console.log('This will make actual API calls to the LLM provider and RAWG.\n');
 
-  const orchestrator = new AgentOrchestrator(rawgApiKey, anthropicApiKey);
+  const orchestrator = new AgentOrchestrator(rawgApiKey, {
+    provider,
+    openaiApiKey,
+    anthropicApiKey,
+  });
 
   try {
     console.log('Query 1: "What\'s the average Metacritic score for PC games released in Q1 2024?"\n');
