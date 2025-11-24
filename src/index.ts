@@ -94,12 +94,26 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
   }
 
   try {
-    const body = await request.json() as { query?: string };
-    const { query } = body;
+    const body = await request.json() as { messages?: Array<{ role: string; content: string }> };
+    const { messages } = body;
 
-    if (!query || typeof query !== 'string') {
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Query is required' }),
+        JSON.stringify({ error: 'Messages array is required' }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
+    }
+
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage || lastMessage.role !== 'user') {
+      return new Response(
+        JSON.stringify({ error: 'Last message must be from user' }),
         {
           status: 400,
           headers: {
@@ -135,11 +149,18 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
       env.CLAUDE_MODEL
     );
 
-    const result = await orchestrator.processQuery(query);
+    const typedMessages: Array<{ role: 'user' | 'assistant'; content: string }> = messages.map(msg => ({
+      role: msg.role === 'user' ? 'user' : 'assistant',
+      content: msg.content,
+    }));
+
+    const result = await orchestrator.processQueryWithHistory(typedMessages);
 
     return new Response(
       JSON.stringify({
-        answer: result.answer,
+        id: `msg-${Date.now()}`,
+        role: 'assistant',
+        content: result.answer,
         toolCalls: result.toolCalls,
         usage: result.usage,
       }),
@@ -470,13 +491,89 @@ function serveChatUI(): Response {
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useRef, useEffect } = React;
+    const { useState, useRef, useEffect, useCallback } = React;
 
-    function ChatApp() {
+    function useChat({ api, onError }) {
       const [messages, setMessages] = useState([]);
       const [input, setInput] = useState('');
-      const [loading, setLoading] = useState(false);
+      const [isLoading, setIsLoading] = useState(false);
+      const [error, setError] = useState(null);
+
+      const handleInputChange = useCallback((e) => {
+        setInput(e.target.value);
+        setError(null);
+      }, []);
+
+      const handleSubmit = useCallback(async (e) => {
+        e.preventDefault();
+        if (!input.trim() || isLoading) return;
+
+        const userMessage = { role: 'user', content: input.trim() };
+        const newMessages = [...messages, userMessage];
+        setMessages(newMessages);
+        setInput('');
+        setIsLoading(true);
+        setError(null);
+
+        try {
+          const response = await fetch(api, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: newMessages }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to get response');
+          }
+
+          const data = await response.json();
+          const assistantMessage = {
+            id: data.id || \`msg-\${Date.now()}\`,
+            role: 'assistant',
+            content: data.content || data.answer || '',
+            toolCalls: data.toolCalls || [],
+            usage: data.usage,
+          };
+
+          setMessages([...newMessages, assistantMessage]);
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          setError({ message: errorMessage });
+          if (onError) {
+            onError(err);
+          }
+          const errorMsg = {
+            id: \`error-\${Date.now()}\`,
+            role: 'assistant',
+            content: \`Error: \${errorMessage}\`,
+            error: true,
+          };
+          setMessages([...newMessages, errorMsg]);
+        } finally {
+          setIsLoading(false);
+        }
+      }, [input, messages, api, isLoading, onError]);
+
+      return {
+        messages,
+        input,
+        handleInputChange,
+        handleSubmit,
+        isLoading,
+        error,
+      };
+    }
+
+    function ChatApp() {
       const messagesEndRef = useRef(null);
+      
+      const { messages, input, handleInputChange, handleSubmit, isLoading, error } = useChat({
+        api: '/api/chat',
+        onError: (error) => {
+          console.error('Chat error:', error);
+        },
+      });
 
       const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -486,48 +583,10 @@ function serveChatUI(): Response {
         scrollToBottom();
       }, [messages]);
 
-      const sendMessage = async () => {
-        if (!input.trim() || loading) return;
-
-        const userMessage = { role: 'user', content: input };
-        setMessages(prev => [...prev, userMessage]);
-        setInput('');
-        setLoading(true);
-
-        try {
-          const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: userMessage.content }),
-          });
-
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(data.error || 'Failed to get response');
-          }
-
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: data.answer,
-            toolCalls: data.toolCalls || [],
-            usage: data.usage,
-          }]);
-        } catch (error) {
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: 'Error: ' + (error.message || 'Unknown error'),
-            error: true,
-          }]);
-        } finally {
-          setLoading(false);
-        }
-      };
-
       const handleKeyPress = (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
           e.preventDefault();
-          sendMessage();
+          handleSubmit(e);
         }
       };
 
@@ -583,7 +642,7 @@ function serveChatUI(): Response {
                 </div>
               )}
               {messages.map((msg, idx) => (
-                <div key={idx} className={\`message \${msg.role}\`}>
+                <div key={msg.id || idx} className={\`message \${msg.role}\`}>
                   <div className="message-bubble">
                     {msg.content}
                   </div>
@@ -603,12 +662,9 @@ function serveChatUI(): Response {
                       Tokens: {msg.usage.promptTokens || 'N/A'} prompt + {msg.usage.completionTokens || 'N/A'} completion
                     </div>
                   )}
-                  {msg.error && (
-                    <div className="error">{msg.content}</div>
-                  )}
                 </div>
               ))}
-              {loading && (
+              {isLoading && (
                 <div className="message assistant">
                   <div className="message-bubble">
                     <div className="loading">
@@ -621,17 +677,24 @@ function serveChatUI(): Response {
               <div ref={messagesEndRef} />
             </div>
             <div className="input-area">
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Ask a question about video games..."
-                disabled={loading}
-              />
-              <button onClick={sendMessage} disabled={loading || !input.trim()}>
-                Send
-              </button>
+              <form onSubmit={handleSubmit}>
+                <input
+                  type="text"
+                  value={input}
+                  onChange={handleInputChange}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Ask a question about video games..."
+                  disabled={isLoading}
+                />
+                <button type="submit" disabled={isLoading || !input.trim()}>
+                  Send
+                </button>
+              </form>
+              {error && (
+                <div className="error" style={{ marginTop: '8px' }}>
+                  Error: {error.message || 'Unknown error'}
+                </div>
+              )}
             </div>
           </div>
         </div>

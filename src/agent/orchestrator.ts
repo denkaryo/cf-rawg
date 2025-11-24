@@ -39,13 +39,24 @@ export class AgentOrchestrator {
   }
 
   async processQuery(userQuery: string): Promise<AgentResponse> {
+    return this.processQueryWithHistory([
+      { role: 'user' as const, content: userQuery },
+    ]);
+  }
+
+  async processQueryWithHistory(
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<AgentResponse> {
     const tools = await this.buildTools();
 
     const model = this.anthropicProvider(this.modelId);
 
     const result = await generateText({
       model,
-      prompt: userQuery,
+      messages: messages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      })),
       tools,
       maxSteps: 5,
     });
