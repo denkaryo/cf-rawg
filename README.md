@@ -100,7 +100,7 @@ RAWG database has limited Metacritic score coverage, which varies significantly 
 - **2024**: Only 2 games total have Metacritic scores across all platforms
 - **2025**: Zero games with Metacritic scores
 
-**Recommendation**: For queries about recent games (2022+), use the `rating` field instead, which has 85-100% coverage. The `rating` field contains RAWG community ratings (0-5 scale) and is much more reliable for recent data.
+For queries about recent games (2022+), we use the `rating` field instead, which has 85-100% coverage. The `rating` field contains RAWG community ratings (0-5 scale) and is much more reliable for recent data.
 
 The `fetch_game_data` tool will automatically warn when Metacritic data is sparse and suggest using the rating field as an alternative.
 
