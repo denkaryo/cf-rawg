@@ -1,0 +1,94 @@
+# Game Analytics MCP Server
+
+Production-ready MCP server + AI agent system for analyzing video game data using RAWG API, deployed on Cloudflare Workers.
+
+## Overview
+
+This project implements a Model Context Protocol (MCP) server that provides tools for fetching and analyzing video game data. An AI agent orchestrates these tools to answer analytical questions about games.
+
+## Architecture
+
+- **MCP Server**: Provides `fetch_game_data` and `execute_calculation` tools
+- **RAWG Client**: Type-safe client for RAWG Video Games Database API
+- **Code Executor**: Safe, dynamic code execution for flexible calculations
+- **AI Agent**: Uses Anthropic Claude (Haiku) to orchestrate tools
+- **UI**: Chat interface with evaluation metrics display
+
+## Setup
+
+### Prerequisites
+
+- Node.js 20+
+- pnpm 10+
+- Cloudflare account
+- RAWG API key: https://rawg.io/apidocs
+- Anthropic API key: https://console.anthropic.com/
+
+### Installation
+
+```bash
+pnpm install
+```
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and fill in your API keys:
+
+```bash
+cp .env.example .env
+```
+
+### Local Development
+
+```bash
+pnpm dev
+```
+
+This starts the Cloudflare Worker locally at `http://localhost:8787`
+
+### Testing
+
+```bash
+# Unit tests
+pnpm test:unit
+
+# Integration tests (actual API calls)
+pnpm test:integration
+```
+
+### Deployment
+
+```bash
+pnpm deploy
+```
+
+## Project Structure
+
+```
+cf-rawg/
+├── src/
+│   ├── mcp-server/     # MCP Server Domain
+│   ├── rawg/           # RAWG API Client Domain
+│   ├── executor/       # Code Execution Domain
+│   ├── agent/          # Agent Orchestration Domain
+│   ├── ui/             # UI/Presentation Domain
+│   └── index.ts        # Worker entry point
+├── tests/
+│   ├── unit/           # Unit tests
+│   └── integration/    # Actual test scripts
+└── wrangler.toml       # Cloudflare config
+```
+
+## Development Approach
+
+This project follows a domain-driven, test-first approach:
+
+1. Write unit tests for each domain
+2. Implement the code to pass tests
+3. Write actual test scripts (no mocks) to validate real behavior
+4. Move to next phase only after tests pass
+
+## License
+
+ISC
+
