@@ -1,5 +1,5 @@
 import { generateText, tool } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
+import { createAnthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 import { InternalMCPClient } from './mcp-client';
 
@@ -18,21 +18,33 @@ export interface AgentResponse {
 
 export class AgentOrchestrator {
   private mcpClient: InternalMCPClient;
-  private model: ReturnType<typeof anthropic>;
+  private anthropicProvider: ReturnType<typeof createAnthropic>;
+  private modelId: string;
 
   constructor(rawgApiKey: string, anthropicApiKey: string, modelName?: string) {
+    if (!anthropicApiKey || anthropicApiKey.trim().length === 0) {
+      throw new Error('Anthropic API key is required and cannot be empty');
+    }
+    
     this.mcpClient = new InternalMCPClient(rawgApiKey);
-    const modelId = modelName || 'claude-3-5-haiku-20241022';
-    this.model = anthropic(modelId, {
-      apiKey: anthropicApiKey,
-    } as any);
+    this.modelId = modelName || 'claude-3-5-haiku-20241022';
+    
+    try {
+      this.anthropicProvider = createAnthropic({
+        apiKey: anthropicApiKey.trim(),
+      });
+    } catch (error) {
+      throw new Error(`Failed to initialize Anthropic provider: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async processQuery(userQuery: string): Promise<AgentResponse> {
     const tools = await this.buildTools();
 
+    const model = this.anthropicProvider(this.modelId);
+
     const result = await generateText({
-      model: this.model,
+      model,
       prompt: userQuery,
       tools,
       maxSteps: 5,
