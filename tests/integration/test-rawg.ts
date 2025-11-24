@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { RAWGClient } from '../../src/rawg/client';
 
 async function main() {

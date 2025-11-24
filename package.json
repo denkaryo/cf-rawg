@@ -12,21 +12,28 @@
     "test:integration": "tsx tests/integration",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": ["mcp", "rawg", "games", "analytics", "cloudflare"],
+  "keywords": [
+    "mcp",
+    "rawg",
+    "games",
+    "analytics",
+    "cloudflare"
+  ],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.16.0",
   "dependencies": {
+    "@ai-sdk/anthropic": "^1.0.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "ai": "^4.0.0",
-    "@ai-sdk/anthropic": "^1.0.0"
+    "ai": "^4.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241106.0",
     "@types/node": "^20.0.0",
+    "dotenv": "^17.2.3",
+    "tsx": "^4.0.0",
     "typescript": "^5.6.0",
     "vitest": "^2.0.0",
-    "wrangler": "^3.0.0",
-    "tsx": "^4.0.0"
+    "wrangler": "^3.0.0"
   }
 }
