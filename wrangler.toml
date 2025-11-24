@@ -7,4 +7,5 @@ name = "cf-rawg"
 
 [vars]
 # Environment variables are set via Cloudflare dashboard or wrangler secret put
+# For local dev, use .dev.vars file or wrangler dev --env RAWG_API_KEY=...
 

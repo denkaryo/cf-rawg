@@ -50,6 +50,17 @@ export function createMCPServer(options: MCPServerOptions) {
 
     if (name === 'execute_calculation') {
       const result = await handleExecuteCalculation(args as any);
+      if (!result.success) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ error: result.error, executionTime: result.executionTime }, null, 2),
+            },
+          ],
+          isError: true,
+        };
+      }
       return {
         content: [
           {
@@ -57,7 +68,6 @@ export function createMCPServer(options: MCPServerOptions) {
             text: JSON.stringify(result, null, 2),
           },
         ],
-        isError: !result.success,
       };
     }
 

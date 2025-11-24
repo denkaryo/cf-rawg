@@ -10,6 +10,7 @@
     "test": "vitest",
     "test:unit": "vitest run tests/unit",
     "test:integration": "tsx tests/integration",
+    "test:e2e": "tsx tests/e2e/test-server.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [

@@ -27,7 +27,7 @@ async function main() {
     });
 
     const listResponse = await handleMCPRequest(listRequest, server);
-    const listResult = await listResponse.json();
+    const listResult = await listResponse.json() as any;
 
     console.log(`   Status: ${listResponse.status}`);
     console.log(`   Tools found: ${listResult.result?.tools?.length || 0}`);
@@ -57,7 +57,7 @@ async function main() {
     });
 
     const fetchResponse = await handleMCPRequest(fetchRequest, server);
-    const fetchResult = await fetchResponse.json();
+    const fetchResult = await fetchResponse.json() as any;
 
     console.log(`   Status: ${fetchResponse.status}`);
     if (fetchResult.result?.content) {
@@ -90,7 +90,7 @@ async function main() {
     });
 
     const calcResponse = await handleMCPRequest(calcRequest, server);
-    const calcResult = await calcResponse.json();
+    const calcResult = await calcResponse.json() as any;
 
     console.log(`   Status: ${calcResponse.status}`);
     if (calcResult.result?.content) {
@@ -115,7 +115,7 @@ async function main() {
     });
 
     const invalidResponse = await handleMCPRequest(invalidRequest, server);
-    const invalidResult = await invalidResponse.json();
+    const invalidResult = await invalidResponse.json() as any;
 
     console.log(`   Status: ${invalidResponse.status}`);
     console.log(`   Error code: ${invalidResult.error?.code}`);
