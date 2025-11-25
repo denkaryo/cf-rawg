@@ -30,6 +30,14 @@ This project implements a Model Context Protocol (MCP) server that provides tool
 pnpm install
 ```
 
+The installation process will automatically copy QuickJS WASM files from `node_modules` to `src/` directory via the `postinstall` script. If you need to manually copy WASM files (e.g., after updating dependencies), run:
+
+```bash
+pnpm copy-wasm
+```
+
+This runs `scripts/copy-wasm-file-into-src.sh` which copies the required WASM files needed for code execution in Cloudflare Workers.
+
 ### Environment Variables
 
 Copy `.env.example` to `.env` and fill in your API keys:
@@ -72,7 +80,10 @@ cf-rawg/
 │   ├── executor/       # Code Execution Domain
 │   ├── agent/          # Agent Orchestration Domain
 │   ├── ui/             # UI/Presentation Domain
+│   ├── RELEASE_SYNC.wasm  # QuickJS WASM module (generated and not tracked by Git)
 │   └── index.ts        # Worker entry point
+├── scripts/
+│   └── copy-wasm-file-into-src.sh  # Script to copy WASM files from node_modules
 ├── tests/
 │   ├── unit/           # Unit tests
 │   └── integration/    # Actual test scripts
@@ -103,6 +114,57 @@ RAWG database has limited Metacritic score coverage, which varies significantly 
 For queries about recent games (2022+), we use the `rating` field instead, which has 85-100% coverage. The `rating` field contains RAWG community ratings (0-5 scale) and is much more reliable for recent data.
 
 The `fetch_game_data` tool will automatically warn when Metacritic data is sparse and suggest using the rating field as an alternative.
+
+### Cloudflare Workers Code Execution Limitations
+
+Cloudflare Workers has strict security restrictions that prevent traditional JavaScript code execution methods:
+
+#### Why `new Function()` Doesn't Work
+
+Cloudflare Workers runtime blocks dynamic code generation using `new Function()` constructor and `eval()` function. When attempting to use these methods, the runtime throws:
+```
+"Code generation from strings disallowed for this context"
+```
+
+This is a security feature to prevent code injection attacks and maintain isolation between worker instances.
+
+#### Why Direct QuickJS WASM Loading Doesn't Work
+
+Initially, we attempted to use `quickjs-emscripten` library directly, but it failed because:
+
+1. **Dynamic WASM Loading**: The library tries to load WASM files via `fetch()` using `self.location.href`, which doesn't exist in Cloudflare Workers environment
+2. **Error**: `TypeError: Cannot read properties of undefined (reading 'href')`
+3. **Root Cause**: Cloudflare Workers bundles all code at build time and doesn't support runtime WASM module loading via network requests
+
+#### Solution: Embedded WASM Files
+
+We solved this by:
+
+1. **Embedding WASM at Build Time**: Using `scripts/copy-wasm-file-into-src.sh` script to copy WASM files from `node_modules` into the `src/` directory
+2. **Automatic Setup**: The script runs automatically via `postinstall` hook after `pnpm install`
+3. **Direct Import**: Importing WASM files directly as modules: `import cloudflareWasmModule from '../RELEASE_SYNC.wasm'`
+4. **Custom Variant**: Creating a Cloudflare-specific variant using `newVariant()` that uses the embedded WASM module instead of trying to load it dynamically
+5. **QuickJS Runtime**: Using QuickJS's `evalCode()` method instead of `new Function()` to execute JavaScript code safely
+
+**Manual WASM Copy**: If you need to manually copy WASM files (e.g., after updating dependencies), run:
+```bash
+pnpm copy-wasm
+```
+
+#### Code Execution Constraints
+
+- **No Top-Level Return**: QuickJS doesn't support top-level `return` statements. Code with `return` statements must be wrapped in an IIFE (Immediately Invoked Function Expression)
+- **Context Serialization**: All context data must be serializable to JSON (functions are filtered out and provided separately as code strings)
+- **Memory Limits**: QuickJS runtime has a 10MB memory limit per execution
+- **Timeout**: Maximum execution time is 5 seconds
+
+#### Bundle Size Impact
+
+The QuickJS WASM module adds approximately **600KB** to the worker bundle:
+- Before: ~894 KB
+- After: ~1495 KB (gzip: ~420 KB)
+
+This is acceptable for the functionality provided, as it enables full JavaScript execution in a sandboxed environment.
 
 ## License
 

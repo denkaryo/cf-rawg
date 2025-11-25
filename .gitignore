@@ -45,3 +45,7 @@ Thumbs.db
 # Cloudflare
 .dev.vars
 
+# WASM files (copied from node_modules)
+src/*.wasm
+src/*.wasm.map.txt
+

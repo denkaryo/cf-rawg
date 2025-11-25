@@ -32,15 +32,9 @@ export function validateCode(code: string): ValidationResult {
     }
   }
 
-  try {
-    new Function(code);
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      errors.push(`Syntax error: ${error.message}`);
-    } else {
-      errors.push(`Parse error: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
+  // Note: We can't use new Function() in Cloudflare Workers, so we skip syntax validation here
+  // QuickJS will catch syntax errors during execution
+  // If we need syntax validation, we'd need to use a parser library like acorn or babel-parser
 
   return {
     valid: errors.length === 0,

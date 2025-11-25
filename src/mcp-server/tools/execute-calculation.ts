@@ -9,8 +9,9 @@ export interface ExecuteCalculationParams {
 export async function handleExecuteCalculation(
   params: ExecuteCalculationParams
 ): Promise<{ result: any; success: boolean; error?: string; executionTime?: number }> {
-  const context = buildContext(params.data);
-  const executionResult = executeSafely(params.code, context);
+  // Wrap data in a 'data' key so code can access it as data.property
+  const context = buildContext({ data: params.data });
+  const executionResult = await executeSafely(params.code, context);
 
   if (!executionResult.success) {
     return {

@@ -12,7 +12,9 @@
     "test:integration": "tsx tests/integration",
     "test:multi-turn": "tsx tests/integration/test-multi-turn.ts",
     "test:e2e": "tsx tests/e2e/test-server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "copy-wasm": "./scripts/copy-wasm-file-into-src.sh",
+    "postinstall": "pnpm copy-wasm"
   },
   "keywords": [
     "mcp",
@@ -27,8 +29,10 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^1.0.0",
     "@ai-sdk/openai": "^1.0.0",
+    "@jitl/quickjs-wasmfile-release-sync": "^0.31.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "ai": "^4.0.0",
+    "quickjs-emscripten": "^0.31.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

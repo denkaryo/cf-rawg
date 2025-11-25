@@ -47,7 +47,7 @@ async function main() {
       return scores.reduce((a, b) => a + b, 0) / scores.length;
     `;
     const context1 = buildContext({ games: gameData });
-    const avgResult = executeSafely(avgCode, context1);
+    const avgResult = await executeSafely(avgCode, context1);
     
     if (avgResult.success) {
       const gamesWithScore = gameData.filter(g => g.metacritic !== null && g.metacritic !== undefined);
@@ -70,7 +70,7 @@ async function main() {
       };
     `;
     const context2 = buildContext({ games: gameData });
-    const helperResult = executeSafely(helperCode, context2);
+    const helperResult = await executeSafely(helperCode, context2);
     
     if (helperResult.success) {
       console.log(`   Average: ${helperResult.value.average.toFixed(2)}`);
@@ -100,7 +100,7 @@ async function main() {
       return result;
     `;
     const context3 = buildContext({ games: gameData });
-    const groupResult = executeSafely(groupCode, context3);
+    const groupResult = await executeSafely(groupCode, context3);
     
     if (groupResult.success) {
       console.log('   Rating ranges:');
@@ -129,7 +129,7 @@ async function main() {
       };
     `;
     const context4 = buildContext({ games: gameData });
-    const complexResult = executeSafely(complexCode, context4);
+    const complexResult = await executeSafely(complexCode, context4);
     
     if (complexResult.success) {
       console.log(`   Total games with scores: ${complexResult.value.total}`);
