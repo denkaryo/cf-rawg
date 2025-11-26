@@ -145,7 +145,7 @@ export class AgentOrchestrator {
         tools.fetch_game_data = tool({
           description: mcpTool.description,
           parameters: z.object({
-            platform: z.string().optional().describe("Platform ID or slug (e.g., 'pc', '4' for PC)"),
+            platform: z.string().optional().describe("Platform ID (use these IDs): PC=4, PlayStation 5=187, PlayStation 4=18, Xbox Series X/S=186, Xbox One=1, Nintendo Switch=7"),
             genre: z.string().optional().describe("Genre ID or slug (e.g., 'action', '4')"),
             dates: z.string().optional().describe("Date range in format 'YYYY-MM-DD,YYYY-MM-DD'"),
             metacritic: z.string().optional().describe("Metacritic score range in format 'min,max'"),
@@ -279,6 +279,20 @@ Metacritic scores have limited coverage in RAWG database:
 - 2024: Only 2 games total have Metacritic scores
 
 If Metacritic data is sparse or unavailable, suggest using the \`rating\` field instead, which has 85-100% coverage for most years.
+
+## Platform IDs Reference
+
+When filtering by platform, use these numeric IDs:
+- PC = 4
+- PlayStation 5 = 187
+- PlayStation 4 = 18
+- Xbox Series X/S = 186
+- Xbox One = 1
+- Nintendo Switch = 7
+- macOS = 5
+- Linux = 6
+- iOS = 3
+- Android = 21
 
 Remember: Always fetch data first, then perform calculations. Never try to calculate without fetching data first.`;
   }

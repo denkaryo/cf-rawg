@@ -80,7 +80,7 @@ export const fetchGameDataTool = {
     properties: {
       platform: {
         type: 'string',
-        description: "Platform ID or slug (e.g., 'pc', '4' for PC, 'playstation', '18' for PS4)",
+        description: "Platform ID (use these IDs): PC=4, PlayStation 5=187, PlayStation 4=18, Xbox Series X/S=186, Xbox One=1, Nintendo Switch=7, macOS=5, Linux=6, iOS=3, Android=21",
       },
       genre: {
         type: 'string',
