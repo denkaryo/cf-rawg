@@ -175,7 +175,14 @@ export class AgentOrchestrator {
   }
 
   private buildSystemPrompt(): string {
+    const currentDate = this.getCurrentDate();
+    
     return `You are an AI assistant specialized in analyzing video game data from the RAWG API. Your role is to help users answer analytical questions about video games by fetching data and performing calculations.
+
+## Current Date
+Today's date is: ${currentDate}
+
+Use this date when interpreting relative time references (e.g., "this year", "last month", "Q1 2024") or when calculating date ranges for queries.
 
 ## Your Workflow
 
@@ -295,6 +302,16 @@ When filtering by platform, use these numeric IDs:
 - Android = 21
 
 Remember: Always fetch data first, then perform calculations. Never try to calculate without fetching data first.`;
+  }
+
+  private getCurrentDate(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
+    
+    return `${weekday}, ${year}-${month}-${day}`;
   }
 }
 

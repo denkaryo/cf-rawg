@@ -90,5 +90,25 @@ describe('Agent Orchestrator', () => {
     });
     expect(result.games).toBeDefined();
   });
+
+  test('getCurrentDate returns formatted date string', () => {
+    const dateString = (orchestrator as any).getCurrentDate();
+    
+    // Should be in format "Weekday, YYYY-MM-DD"
+    expect(dateString).toMatch(/^[A-Za-z]+, \d{4}-\d{2}-\d{2}$/);
+    
+    // Should contain current year
+    const currentYear = new Date().getFullYear();
+    expect(dateString).toContain(String(currentYear));
+    
+    // Should contain valid date format
+    const dateMatch = dateString.match(/(\d{4}-\d{2}-\d{2})/);
+    expect(dateMatch).toBeTruthy();
+    
+    if (dateMatch) {
+      const date = new Date(dateMatch[1]);
+      expect(date.getTime()).not.toBeNaN();
+    }
+  });
 });
 
