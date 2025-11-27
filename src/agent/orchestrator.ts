@@ -105,7 +105,7 @@ export class AgentOrchestrator {
         content: msg.content,
       })),
       tools,
-      maxSteps: 5,
+      maxSteps: 10, // Increased to allow for multiple tool calls + final response generation
     });
 
     // Log model verification from response (if available)
@@ -136,14 +136,35 @@ export class AgentOrchestrator {
       }
     }
 
+    // Check if we have a final answer
+    // If result.text is empty but we have tool calls, the LLM might have stopped after tool calls
+    // In this case, we should still return something meaningful
+    let finalAnswer = result.text;
+    
+    if (!finalAnswer || finalAnswer.trim().length === 0) {
+      if (toolCalls.length > 0) {
+        // LLM completed tool calls but didn't generate a final response
+        // This shouldn't happen with proper prompting, but handle it gracefully
+        console.warn(`[AgentOrchestrator] WARNING: No final answer generated after ${toolCalls.length} tool calls`);
+        finalAnswer = 'I completed the calculations. Please review the tool call results above.';
+      } else {
+        finalAnswer = 'I processed your query but did not generate a response.';
+      }
+    }
+
+    // Log detailed information for debugging
+    console.log(`[AgentOrchestrator] Response prepared with model: ${this.modelId}`);
+    console.log(`[AgentOrchestrator] Tool calls: ${toolCalls.length}`);
+    console.log(`[AgentOrchestrator] Final answer length: ${finalAnswer?.length || 0} characters`);
+    console.log(`[AgentOrchestrator] Finish reason: ${(result as any).finishReason || 'unknown'}`);
+    console.log(`[AgentOrchestrator] Tokens: ${result.usage?.promptTokens || 0}/${result.usage?.completionTokens || 0}`);
+
     const response = {
-      answer: result.text,
+      answer: finalAnswer,
       toolCalls,
       usage: result.usage,
       model: this.modelId,
     };
-    
-    console.log(`[AgentOrchestrator] Response prepared with model: ${this.modelId}, toolCalls: ${toolCalls.length}, tokens: ${result.usage?.promptTokens || 0}/${result.usage?.completionTokens || 0}`);
     
     return response;
   }
@@ -175,7 +196,7 @@ export class AgentOrchestrator {
           description: mcpTool.description,
           parameters: z.object({
             code: z.string().describe('JavaScript code to execute. Should return a value.'),
-            data: z.record(z.any()).describe('Data to make available to the code execution context'),
+            data: z.record(z.any()).describe('REQUIRED: Data to make available to the code execution context. Pass the result from fetch_game_data as this parameter (e.g., {games: [...]}).'),
           }),
           execute: async (args: any) => {
             return await this.mcpClient.callTool('execute_calculation', args);
@@ -199,10 +220,14 @@ Use this date when interpreting relative time references (e.g., "this year", "la
 
 ## Your Workflow
 
-When answering analytical questions, follow this two-step process:
+When answering analytical questions, follow this three-step process:
 
 1. **Fetch Data First**: Use the \`fetch_game_data\` tool to retrieve game data based on the user's query (platform, genre, date range, etc.)
 2. **Calculate Results**: Use the \`execute_calculation\` tool to perform calculations on the fetched data
+   - **CRITICAL**: You MUST pass the result from \`fetch_game_data\` as the \`data\` parameter
+   - Format: \`{code: "...", data: {games: [...]}}\`
+   - The \`data\` parameter is REQUIRED - always include it!
+3. **Provide Final Answer**: After completing calculations, ALWAYS provide a clear, natural language explanation of the results to answer the user's question. Do not stop after tool calls - you must explain what the results mean and answer the original question.
 
 ## Efficiency Guidelines ⚡
 
@@ -260,18 +285,61 @@ The \`fetch_game_data\` tool returns an object with this structure:
 **Important**: If \`summary\` is present, you can use those statistics directly for calculations without needing to process all games. The summary includes averages calculated from ALL matching games, not just the ones shown.
 
 ### execute_calculation Usage
-The \`execute_calculation\` tool requires:
+The \`execute_calculation\` tool requires **BOTH** parameters:
 - \`code\`: JavaScript code that returns a value
-- \`data\`: An object containing the data to analyze (typically \`{games: [...]}\`)
+- \`data\`: **REQUIRED** - An object containing the data to analyze (typically \`{games: [...]}\`)
+
+**IMPORTANT**: Always pass the result from \`fetch_game_data\` as the \`data\` parameter!
 
 The code has access to:
-- The \`data\` object passed in
+- The \`data\` object passed in (e.g., \`data.games\` to access the games array)
 - Helper functions: \`avg()\`, \`sum()\`, \`max()\`, \`min()\`, \`groupBy()\`
 - Standard JavaScript: Math, Array methods, etc.
+
+### Complete Tool Call Example
+
+When calling \`execute_calculation\`, you MUST provide both \`code\` and \`data\`:
+
+\`\`\`json
+{
+  "code": "const gamesWithScore = data.games.filter(g => g.metacritic !== null); const scores = gamesWithScore.map(g => g.metacritic); return scores.length > 0 ? avg(scores) : null;",
+  "data": {
+    "games": [
+      {"id": 1, "name": "Game 1", "metacritic": 85, "rating": 4.5},
+      {"id": 2, "name": "Game 2", "metacritic": 90, "rating": 4.7}
+    ]
+  }
+}
+\`\`\`
+
+**Remember**: The \`data\` parameter should contain the result from your \`fetch_game_data\` call!
 
 ## Calculation Examples
 
 ### Example 1: Average Metacritic Score
+
+**Step 1**: Fetch games
+\`\`\`json
+{
+  "tool": "fetch_game_data",
+  "args": {"platform": "4", "dates": "2024-01-01,2024-12-31", "page_size": 20}
+}
+\`\`\`
+
+**Step 2**: Calculate average (pass the result from Step 1 as \`data\`)
+\`\`\`json
+{
+  "tool": "execute_calculation",
+  "args": {
+    "code": "const gamesWithScore = data.games.filter(g => g.metacritic !== null && g.metacritic !== undefined); const scores = gamesWithScore.map(g => g.metacritic); return scores.length > 0 ? avg(scores) : null;",
+    "data": {
+      "games": [...]  // Pass the games array from fetch_game_data result here!
+    }
+  }
+}
+\`\`\`
+
+**Code only** (for reference):
 \`\`\`javascript
 // Filter games with Metacritic scores and calculate average
 const gamesWithScore = data.games.filter(g => g.metacritic !== null && g.metacritic !== undefined);
@@ -280,6 +348,29 @@ return scores.length > 0 ? avg(scores) : null;
 \`\`\`
 
 ### Example 2: Group by Genre and Calculate Averages
+
+**Step 1**: Fetch games (with genres included)
+\`\`\`json
+{
+  "tool": "fetch_game_data",
+  "args": {"genre": "action", "dates": "2023-01-01,2023-12-31", "page_size": 20}
+}
+\`\`\`
+
+**Step 2**: Calculate averages per genre (pass result from Step 1 as \`data\`)
+\`\`\`json
+{
+  "tool": "execute_calculation",
+  "args": {
+    "code": "const grouped = groupBy(data.games, 'genres'); const result = {}; for (const genre in grouped) { const games = grouped[genre]; const ratings = games.map(g => g.rating).filter(r => r !== null); result[genre] = ratings.length > 0 ? avg(ratings) : null; } return result;",
+    "data": {
+      "games": [...]  // Pass the games array from fetch_game_data result here!
+    }
+  }
+}
+\`\`\`
+
+**Code only** (for reference):
 \`\`\`javascript
 // Group games by genre and calculate average rating per genre
 const grouped = groupBy(data.games, 'genres');
@@ -293,26 +384,54 @@ return result;
 \`\`\`
 
 ### Example 3: Count Games by Platform
+
+**Step 1**: Fetch games (with platforms included - filter by platform to ensure platforms array is included)
+\`\`\`json
+{
+  "tool": "fetch_game_data",
+  "args": {"platform": "4", "page_size": 20}
+}
+\`\`\`
+
+**Step 2**: Count games per platform (pass result from Step 1 as \`data\`)
+\`\`\`json
+{
+  "tool": "execute_calculation",
+  "args": {
+    "code": "const platformCounts = {}; data.games.forEach(game => { if (game.platforms) { game.platforms.forEach(platform => { const platformName = platform.platform.name; platformCounts[platformName] = (platformCounts[platformName] || 0) + 1; }); } }); return platformCounts;",
+    "data": {
+      "games": [...]  // Pass the games array from fetch_game_data result here!
+    }
+  }
+}
+\`\`\`
+
+**Code only** (for reference):
 \`\`\`javascript
 // Count games per platform
 const platformCounts = {};
 data.games.forEach(game => {
-  game.platforms.forEach(platform => {
-    const platformName = platform.platform.name;
-    platformCounts[platformName] = (platformCounts[platformName] || 0) + 1;
-  });
+  if (game.platforms) {
+    game.platforms.forEach(platform => {
+      const platformName = platform.platform.name;
+      platformCounts[platformName] = (platformCounts[platformName] || 0) + 1;
+    });
+  }
 });
 return platformCounts;
 \`\`\`
 
 ## Important Guidelines
 
-1. **Always filter null/undefined values** before calculations (especially for Metacritic scores)
-2. **Handle empty arrays**: Check if data exists before calculating averages
-3. **Use helper functions**: Prefer \`avg()\`, \`sum()\`, etc. over manual calculations
-4. **Check for warnings**: If \`fetch_game_data\` returns warnings about data coverage, mention this to the user
-5. **Return meaningful results**: Always return the final calculated value, not intermediate steps
-6. **Error handling**: If calculation fails, explain what went wrong and suggest alternatives
+1. **ALWAYS pass the \`data\` parameter**: When calling \`execute_calculation\`, you MUST include both \`code\` and \`data\` parameters. Pass the result from \`fetch_game_data\` as \`data\`.
+2. **ALWAYS provide a final answer**: After completing tool calls, you MUST provide a natural language response explaining the results and answering the user's question. Never stop after just calling tools - always explain what the results mean.
+3. **Always filter null/undefined values** before calculations (especially for Metacritic scores)
+4. **Handle empty arrays**: Check if data exists before calculating averages
+5. **Use helper functions**: Prefer \`avg()\`, \`sum()\`, etc. over manual calculations
+6. **Check for warnings**: If \`fetch_game_data\` returns warnings about data coverage, mention this to the user
+7. **Return meaningful results**: Always return the final calculated value, not intermediate steps
+8. **Error handling**: If calculation fails, explain what went wrong and suggest alternatives
+9. **Explain your reasoning**: When providing the final answer, briefly explain how you arrived at the conclusion (e.g., "I fetched X games and calculated the average rating per genre, finding that Y genre had the highest average rating of Z")
 
 ## Common Query Patterns
 
