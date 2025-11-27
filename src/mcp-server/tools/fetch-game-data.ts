@@ -1,5 +1,6 @@
 import { RAWGClient } from '../../rawg/client';
 import type { FilterOptions } from '../../rawg/types';
+import { trimGameResponse, type TrimmedResponse } from './response-trimmer';
 
 export interface FetchGameDataParams {
   platform?: string;
@@ -9,10 +10,29 @@ export interface FetchGameDataParams {
   page_size?: number;
 }
 
+export interface FetchGameDataResult {
+  games: any[];
+  count: number;
+  filters: FilterOptions;
+  warning?: string;
+  suggestion?: string;
+  summary?: {
+    totalCount: number;
+    shown: number;
+    avgMetacritic?: number | null;
+    avgRating?: number;
+    minMetacritic?: number | null;
+    maxMetacritic?: number | null;
+    minRating?: number;
+    maxRating?: number;
+  };
+  truncated?: boolean;
+}
+
 export async function handleFetchGameData(
   params: FetchGameDataParams,
   rawgClient: RAWGClient
-): Promise<{ games: any[]; count: number; filters: FilterOptions; warning?: string; suggestion?: string }> {
+): Promise<FetchGameDataResult> {
   const filters: FilterOptions = {};
 
   if (params.platform) {
@@ -31,8 +51,12 @@ export async function handleFetchGameData(
     filters.metacritic = params.metacritic;
   }
 
+  // Set smart default page_size to 20 if not specified
+  // This reduces response size significantly while maintaining statistical validity
   if (params.page_size) {
     filters.page_size = Math.min(params.page_size, 40);
+  } else {
+    filters.page_size = 20; // Smart default for efficient queries
   }
 
   const response = await rawgClient.getGames(filters);
@@ -63,10 +87,24 @@ export async function handleFetchGameData(
     }
   }
 
+  // Trim response to reduce payload size
+  // Determine if we need platforms/genres based on query type
+  // For most statistical queries, we don't need these nested fields
+  const needsPlatforms = params.platform !== undefined;
+  const needsGenres = params.genre !== undefined;
+  
+  const trimmed = trimGameResponse(response.results, response.count, {
+    maxGames: filters.page_size || 20,
+    includePlatforms: needsPlatforms,
+    includeGenres: needsGenres,
+  });
+
   return {
-    games: response.results,
+    games: trimmed.games,
     count: response.count,
     filters,
+    ...(trimmed.summary && { summary: trimmed.summary }),
+    ...(trimmed.truncated && { truncated: true }),
     ...(warning && { warning }),
     ...(suggestion && { suggestion }),
   };
@@ -96,7 +134,7 @@ export const fetchGameDataTool = {
       },
       page_size: {
         type: 'number',
-        description: 'Number of results per page (max 40)',
+        description: 'Number of results per page (default: 20, max: 40). Use 20-30 for most statistical queries as this provides sufficient sample size while keeping responses efficient.',
         minimum: 1,
         maximum: 40,
       },

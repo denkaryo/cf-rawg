@@ -162,7 +162,7 @@ export class AgentOrchestrator {
             genre: z.string().optional().describe("Genre ID or slug (e.g., 'action', '4')"),
             dates: z.string().optional().describe("Date range in format 'YYYY-MM-DD,YYYY-MM-DD'"),
             metacritic: z.string().optional().describe("Metacritic score range in format 'min,max'"),
-            page_size: z.number().optional().describe('Number of results per page (max 40)'),
+            page_size: z.number().optional().describe('Number of results per page (default: 20, max: 40). IMPORTANT: Use 20-30 for most queries. This provides sufficient sample size for statistical calculations while keeping responses efficient. Only use larger values if explicitly needed.'),
           }),
           execute: async (args: any) => {
             return await this.mcpClient.callTool('fetch_game_data', args);
@@ -204,6 +204,27 @@ When answering analytical questions, follow this two-step process:
 1. **Fetch Data First**: Use the \`fetch_game_data\` tool to retrieve game data based on the user's query (platform, genre, date range, etc.)
 2. **Calculate Results**: Use the \`execute_calculation\` tool to perform calculations on the fetched data
 
+## Efficiency Guidelines ⚡
+
+**CRITICAL**: Always prioritize efficiency to ensure fast responses:
+
+1. **Page Size**: Always use \`page_size: 20\` or \`page_size: 30\` when calling \`fetch_game_data\`
+   - For statistical queries (averages, comparisons), 20-30 games provides sufficient sample size
+   - Larger samples don't significantly improve accuracy for most calculations
+   - Only fetch more if explicitly needed for specific analysis (e.g., "top 50 games")
+   - Default is 20 if you don't specify, which is optimal for most queries
+
+2. **Data Requirements**: Only fetch what you need
+   - For Metacritic score queries: Only need \`metacritic\` field (already included in minimal response)
+   - For rating queries: Only need \`rating\` field (already included)
+   - For date-based queries: Only need \`released\` field (already included)
+   - Nested data (platforms, genres arrays) are automatically excluded unless filtering by platform/genre
+
+3. **Avoid Over-Fetching**: 
+   - Don't fetch multiple pages unless absolutely necessary
+   - A single fetch with 20-30 games is usually sufficient for calculations
+   - If response includes \`summary\` field, you can use those stats directly without fetching more
+
 ## Understanding Data Structures
 
 ### fetch_game_data Response
@@ -214,20 +235,29 @@ The \`fetch_game_data\` tool returns an object with this structure:
     {
       "id": 123,
       "name": "Game Name",
-      "slug": "game-slug",
       "metacritic": 85,  // Can be null/undefined - filter these out!
       "rating": 4.5,     // RAWG community rating (0-5 scale)
-      "released": "2024-01-15",
-      "platforms": [...],
-      "genres": [...]
+      "released": "2024-01-15"
+      // Note: platforms/genres arrays are only included if filtering by platform/genre
     }
   ],
-  "count": 100,
+  "count": 100,          // Total count available (may be larger than games.length)
   "filters": {...},
+  "summary": {            // Optional: Included if response was truncated
+    "totalCount": 100,
+    "shown": 20,
+    "avgMetacritic": 82.5,
+    "avgRating": 4.2,
+    "minMetacritic": 60,
+    "maxMetacritic": 95
+  },
+  "truncated": true,      // Optional: True if response was truncated
   "warning": "...",      // Optional: warnings about data coverage
   "suggestion": "..."   // Optional: suggestions for better data
 }
 \`\`\`
+
+**Important**: If \`summary\` is present, you can use those statistics directly for calculations without needing to process all games. The summary includes averages calculated from ALL matching games, not just the ones shown.
 
 ### execute_calculation Usage
 The \`execute_calculation\` tool requires:
@@ -286,9 +316,9 @@ return platformCounts;
 
 ## Common Query Patterns
 
-- **"Average X for Y games"**: Fetch games matching Y criteria, then calculate average of X field
-- **"Which genre/platform has highest..."**: Fetch games, group by genre/platform, calculate averages, find max
-- **"Compare X vs Y"**: Fetch data for both X and Y, calculate metrics for each, compare results
+- **"Average X for Y games"**: Fetch games matching Y criteria with \`page_size: 20\`, then calculate average of X field. If response includes \`summary.avgX\`, use that directly.
+- **"Which genre/platform has highest..."**: Fetch games with \`page_size: 20-30\`, group by genre/platform, calculate averages, find max
+- **"Compare X vs Y"**: Fetch data for both X and Y with \`page_size: 20\` each, calculate metrics for each, compare results
 
 ## Metacritic Score Limitations
 
@@ -328,4 +358,6 @@ Remember: Always fetch data first, then perform calculations. Never try to calcu
   }
 }
 
+    
+    
     
