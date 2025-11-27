@@ -17,6 +17,7 @@ export interface AgentResponse {
     promptTokens?: number;
     completionTokens?: number;
   };
+  model?: string;
 }
 
 export class AgentOrchestrator {
@@ -86,8 +87,10 @@ export class AgentOrchestrator {
     let model;
     if (this.provider === 'openai' && this.openaiProvider) {
       model = this.openaiProvider(this.modelId);
+      console.log(`[AgentOrchestrator] Using OpenAI model: ${this.modelId}`);
     } else if (this.provider === 'anthropic' && this.anthropicProvider) {
       model = this.anthropicProvider(this.modelId);
+      console.log(`[AgentOrchestrator] Using Anthropic model: ${this.modelId}`);
     } else {
       throw new Error(`Provider ${this.provider} is not properly initialized`);
     }
@@ -104,6 +107,11 @@ export class AgentOrchestrator {
       tools,
       maxSteps: 5,
     });
+
+    // Log model verification from response (if available)
+    if ((result as any).response?.model) {
+      console.log(`[AgentOrchestrator] Response model: ${(result as any).response.model}`);
+    }
 
     const toolCalls: AgentResponse['toolCalls'] = [];
     
@@ -128,11 +136,16 @@ export class AgentOrchestrator {
       }
     }
 
-    return {
+    const response = {
       answer: result.text,
       toolCalls,
       usage: result.usage,
+      model: this.modelId,
     };
+    
+    console.log(`[AgentOrchestrator] Response prepared with model: ${this.modelId}, toolCalls: ${toolCalls.length}, tokens: ${result.usage?.promptTokens || 0}/${result.usage?.completionTokens || 0}`);
+    
+    return response;
   }
 
   private async buildTools() {

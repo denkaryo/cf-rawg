@@ -578,6 +578,7 @@ export function getChatUIHTML(): string {
             content: data.content || data.answer || '',
             toolCalls: data.toolCalls || [],
             usage: data.usage,
+            model: data.model,
           };
 
           setMessages([...newMessages, assistantMessage]);
@@ -841,9 +842,12 @@ export function getChatUIHTML(): string {
                       })}
                     </div>
                   )}
-                  {msg.usage && (
+                  {(msg.usage || msg.model) && (
                     <div className="usage">
-                      Tokens: {msg.usage.promptTokens || 'N/A'} prompt + {msg.usage.completionTokens || 'N/A'} completion
+                      {msg.model && <span>Model: {msg.model} | </span>}
+                      {msg.usage && (
+                        <span>Tokens: {msg.usage.promptTokens || 'N/A'} prompt + {msg.usage.completionTokens || 'N/A'} completion</span>
+                      )}
                     </div>
                   )}
                 </div>

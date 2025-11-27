@@ -23,6 +23,9 @@ export default {
     }
 
     if (url.pathname === '/api/debug' && request.method === 'GET') {
+      const provider = (env.LLM_PROVIDER || 'openai') as 'openai' | 'anthropic';
+      const modelName = provider === 'openai' ? env.OPENAI_MODEL : env.CLAUDE_MODEL;
+      
       return new Response(
         JSON.stringify({
           hasRawgKey: !!env.RAWG_API_KEY,
@@ -33,7 +36,8 @@ export default {
           hasAnthropicKey: !!env.ANTHROPIC_API_KEY,
           anthropicKeyLength: env.ANTHROPIC_API_KEY?.length || 0,
           anthropicKeyPrefix: env.ANTHROPIC_API_KEY?.substring(0, 10) || 'none',
-          llmProvider: env.LLM_PROVIDER || 'openai',
+          llmProvider: provider,
+          modelName: modelName || (provider === 'openai' ? 'gpt-4o-mini (default)' : 'claude-3-5-haiku-20241022 (default)'),
         }),
         {
           headers: {
@@ -189,11 +193,14 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
     }
 
     // Create orchestrator with provider-specific options
+    const modelName = provider === 'openai' ? env.OPENAI_MODEL : env.CLAUDE_MODEL;
+    console.log(`[handleChatRequest] Provider: ${provider}, Model: ${modelName || '(default)'}`);
+    
     const orchestrator = new AgentOrchestrator(env.RAWG_API_KEY!, {
       provider,
       openaiApiKey: env.OPENAI_API_KEY,
       anthropicApiKey: env.ANTHROPIC_API_KEY,
-      modelName: provider === 'openai' ? env.OPENAI_MODEL : env.CLAUDE_MODEL,
+      modelName,
     });
 
     const typedMessages: Array<{ role: 'user' | 'assistant'; content: string }> = messages.map(msg => ({
@@ -210,6 +217,7 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
         content: result.answer,
         toolCalls: result.toolCalls,
         usage: result.usage,
+        model: result.model,
       }),
       {
         status: 200,
