@@ -18,6 +18,8 @@ export function getChatUIHTML(): string {
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
   <style>
     * {
       margin: 0;
@@ -107,6 +109,167 @@ export function getChatUIHTML(): string {
     .message.assistant .message-bubble {
       background: #e9ecef;
       color: #333;
+    }
+
+    /* Markdown styling */
+    .message-bubble h1,
+    .message-bubble h2,
+    .message-bubble h3,
+    .message-bubble h4,
+    .message-bubble h5,
+    .message-bubble h6 {
+      margin-top: 16px;
+      margin-bottom: 8px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    .message-bubble h1 { font-size: 1.5em; }
+    .message-bubble h2 { font-size: 1.3em; }
+    .message-bubble h3 { font-size: 1.1em; }
+
+    .message-bubble p {
+      margin-bottom: 12px;
+      line-height: 1.6;
+    }
+
+    .message-bubble p:last-child {
+      margin-bottom: 0;
+    }
+
+    .message-bubble strong {
+      font-weight: 600;
+    }
+
+    .message-bubble em {
+      font-style: italic;
+    }
+
+    .message-bubble ul,
+    .message-bubble ol {
+      margin: 12px 0;
+      padding-left: 24px;
+    }
+
+    .message-bubble li {
+      margin-bottom: 6px;
+      line-height: 1.5;
+    }
+
+    .message-bubble ol {
+      list-style-type: decimal;
+    }
+
+    .message-bubble ul {
+      list-style-type: disc;
+    }
+
+    .message-bubble a {
+      color: #007bff;
+      text-decoration: underline;
+      word-break: break-word;
+    }
+
+    .message.user .message-bubble a {
+      color: #ffffff;
+      text-decoration: underline;
+    }
+
+    .message-bubble a:hover {
+      color: #0056b3;
+    }
+
+    .message.user .message-bubble a:hover {
+      color: #e0e0e0;
+    }
+
+    .message-bubble img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      margin: 12px 0;
+      display: block;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .message-bubble code {
+      background: rgba(0,0,0,0.05);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9em;
+    }
+
+    .message.user .message-bubble code {
+      background: rgba(255,255,255,0.2);
+      color: #ffffff;
+    }
+
+    .message-bubble pre {
+      background: rgba(0,0,0,0.05);
+      padding: 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 12px 0;
+    }
+
+    .message.user .message-bubble pre {
+      background: rgba(255,255,255,0.15);
+    }
+
+    .message-bubble pre code {
+      background: none;
+      padding: 0;
+    }
+
+    .message-bubble blockquote {
+      border-left: 3px solid #007bff;
+      padding-left: 16px;
+      margin: 12px 0;
+      color: #666;
+      font-style: italic;
+    }
+
+    .message.user .message-bubble blockquote {
+      border-left-color: rgba(255,255,255,0.5);
+      color: rgba(255,255,255,0.9);
+    }
+
+    .message-bubble hr {
+      border: none;
+      border-top: 1px solid #ddd;
+      margin: 16px 0;
+    }
+
+    .message.user .message-bubble hr {
+      border-top-color: rgba(255,255,255,0.3);
+    }
+
+    .message-bubble table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 12px 0;
+    }
+
+    .message-bubble th,
+    .message-bubble td {
+      border: 1px solid #ddd;
+      padding: 8px 12px;
+      text-align: left;
+    }
+
+    .message.user .message-bubble th,
+    .message.user .message-bubble td {
+      border-color: rgba(255,255,255,0.3);
+    }
+
+    .message-bubble th {
+      background: #f8f9fa;
+      font-weight: 600;
+    }
+
+    .message.user .message-bubble th {
+      background: rgba(255,255,255,0.2);
     }
 
     .tool-calls {
@@ -490,6 +653,47 @@ export function getChatUIHTML(): string {
       return JSON.stringify(result, null, 2);
     }
 
+    function renderMarkdown(content) {
+      if (!content || typeof content !== 'string') {
+        return '';
+      }
+      
+      try {
+        // Configure marked options
+        if (typeof marked !== 'undefined') {
+          marked.setOptions({
+            breaks: true,
+            gfm: true,
+            headerIds: false,
+            mangle: false
+          });
+          
+          // Parse markdown to HTML
+          const html = marked.parse(content);
+          
+          // Sanitize HTML to prevent XSS
+          if (typeof DOMPurify !== 'undefined') {
+            return DOMPurify.sanitize(html, {
+              ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'a', 'img', 'code', 'pre', 'blockquote', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+              ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'class', 'target', 'rel'],
+              ALLOW_DATA_ATTR: false
+            });
+          }
+          
+          // If DOMPurify not available, return HTML (marked output is generally safe)
+          return html;
+        }
+        
+        // Fallback: return plain text if marked is not available
+        // Content will be escaped by React's dangerouslySetInnerHTML
+        return content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      } catch (error) {
+        console.error('Markdown rendering error:', error);
+        // Return escaped content on error
+        return content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+    }
+
     function ChatApp() {
       const messagesEndRef = useRef(null);
       const [expandedToolCalls, setExpandedToolCalls] = useState(new Set());
@@ -582,9 +786,10 @@ export function getChatUIHTML(): string {
               )}
               {messages.map((msg, msgIdx) => (
                 <div key={msg.id || msgIdx} className={\`message \${msg.role}\`}>
-                  <div className="message-bubble">
-                    {msg.content}
-                  </div>
+                  <div 
+                    className="message-bubble"
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                  />
                   {msg.toolCalls && msg.toolCalls.length > 0 && (
                     <div className="tool-calls">
                       <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '13px' }}>Tool Calls:</div>
