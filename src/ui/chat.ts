@@ -372,15 +372,19 @@ export function getChatUIHTML(): string {
     .input-area {
       padding: 20px;
       border-top: 1px solid #e9ecef;
+    }
+
+    .input-area form {
       display: flex;
-      gap: 12px;
+      gap: 0;
     }
 
     .input-area input {
       flex: 1;
-      padding: 12px 16px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
+      width: 100%;
+      padding: 14px 18px;
+      border: 2px solid #ddd;
+      border-radius: 8px 0 0 8px;
       font-size: 15px;
       font-family: 'Poppins', sans-serif;
     }
@@ -391,23 +395,27 @@ export function getChatUIHTML(): string {
     }
 
     .input-area button {
-      padding: 12px 24px;
+      padding: 14px 24px;
       background: #007bff;
       color: white;
-      border: none;
-      border-radius: 6px;
+      border: 2px solid #007bff;
+      border-left: none;
+      border-radius: 0 8px 8px 0;
       font-size: 15px;
       font-weight: 500;
       cursor: pointer;
       font-family: 'Poppins', sans-serif;
+      white-space: nowrap;
     }
 
     .input-area button:hover {
       background: #0056b3;
+      border-color: #0056b3;
     }
 
     .input-area button:disabled {
       background: #ccc;
+      border-color: #ccc;
       cursor: not-allowed;
     }
 
@@ -446,89 +454,52 @@ export function getChatUIHTML(): string {
       color: #666;
     }
 
-    .eval-section {
-      background: white;
-      padding: 24px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    .example-queries {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 16px 20px;
+      border-top: 1px solid #e9ecef;
+      background: #fafafa;
     }
 
-    .eval-section h2 {
-      font-size: 20px;
-      font-weight: 600;
-      color: #222;
-      margin-bottom: 16px;
-    }
-
-    .eval-item {
-      padding: 16px;
-      background: #f8f9fa;
-      border-radius: 6px;
-      margin-bottom: 12px;
-      border-left: 4px solid #007bff;
-    }
-
-    .eval-item:last-child {
-      margin-bottom: 0;
-    }
-
-    .eval-query {
-      font-weight: 600;
-      color: #222;
+    .example-queries-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: #666;
       margin-bottom: 8px;
     }
 
-    .eval-result {
-      display: flex;
-      gap: 16px;
-      margin-top: 8px;
-      font-size: 14px;
-    }
-
-    .eval-result-item {
-      flex: 1;
-    }
-
-    .eval-result-label {
-      color: #666;
-      font-size: 12px;
-      margin-bottom: 4px;
-    }
-
-    .eval-result-value {
-      font-weight: 500;
-      color: #222;
-    }
-
-    .eval-status {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-weight: 500;
-      margin-top: 8px;
-    }
-
-    .eval-status.pass {
-      background: #d4edda;
-      color: #155724;
-    }
-
-    .eval-status.fail {
-      background: #f8d7da;
-      color: #721c24;
-    }
-
-    .eval-code {
-      margin-top: 8px;
-      padding: 8px;
+    .example-query-button {
+      padding: 12px 16px;
       background: white;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 12px;
+      border: 2px solid #e9ecef;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: 'Poppins', sans-serif;
       color: #333;
-      overflow-x: auto;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .example-query-button:hover {
+      border-color: #007bff;
+      background: #f8f9ff;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .example-query-button:active {
+      transform: translateY(0);
+    }
+
+    .example-query-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      border-color: #e9ecef;
+      background: white;
     }
   </style>
 </head>
@@ -548,11 +519,10 @@ export function getChatUIHTML(): string {
         setError(null);
       }, []);
 
-      const handleSubmit = useCallback(async (e) => {
-        e.preventDefault();
-        if (!input.trim() || isLoading) return;
+      const sendMessage = useCallback(async (messageText) => {
+        if (!messageText.trim() || isLoading) return;
 
-        const userMessage = { role: 'user', content: input.trim() };
+        const userMessage = { role: 'user', content: messageText.trim() };
         const newMessages = [...messages, userMessage];
         setMessages(newMessages);
         setInput('');
@@ -598,13 +568,19 @@ export function getChatUIHTML(): string {
         } finally {
           setIsLoading(false);
         }
-      }, [input, messages, api, isLoading, onError]);
+      }, [messages, api, isLoading, onError]);
+
+      const handleSubmit = useCallback(async (e) => {
+        e.preventDefault();
+        await sendMessage(input);
+      }, [input, sendMessage]);
 
       return {
         messages,
         input,
         handleInputChange,
         handleSubmit,
+        sendMessage,
         isLoading,
         error,
       };
@@ -699,7 +675,7 @@ export function getChatUIHTML(): string {
       const messagesEndRef = useRef(null);
       const [expandedToolCalls, setExpandedToolCalls] = useState(new Set());
       
-      const { messages, input, handleInputChange, handleSubmit, isLoading, error } = useChat({
+      const { messages, input, handleInputChange, handleSubmit, sendMessage, isLoading, error } = useChat({
         api: '/api/chat',
         onError: (error) => {
           console.error('Chat error:', error);
@@ -740,49 +716,12 @@ export function getChatUIHTML(): string {
             <h1>Game Analytics AI Agent</h1>
             <p>Ask questions about video game data. The agent will fetch data from RAWG API and perform calculations.</p>
           </div>
-          <div className="eval-section">
-            <h2>Evaluation Examples</h2>
-            <div className="eval-item">
-              <div className="eval-query">Query: "What's the average Metacritic score for PC games in Q1 2024?"</div>
-              <div className="eval-result">
-                <div className="eval-result-item">
-                  <div className="eval-result-label">Expected</div>
-                  <div className="eval-result-value">~75 (estimated)</div>
-                </div>
-                <div className="eval-result-item">
-                  <div className="eval-result-label">Data Source</div>
-                  <div className="eval-result-value">RAWG API</div>
-                </div>
-                <div className="eval-result-item">
-                  <div className="eval-result-label">Calculation</div>
-                  <div className="eval-result-value">sum(metacritic) / count</div>
-                </div>
-              </div>
-              <div className="eval-code">const scores = games.map(g => g.metacritic).filter(s => s); return avg(scores);</div>
-              <div className="eval-status pass">Status: Ready for testing</div>
-            </div>
-            <div className="eval-item">
-              <div className="eval-query">Query: "Which genre had the highest rated games in 2023?"</div>
-              <div className="eval-result">
-                <div className="eval-result-item">
-                  <div className="eval-result-label">Method</div>
-                  <div className="eval-result-value">Group by genre, calculate avg rating</div>
-                </div>
-                <div className="eval-result-item">
-                  <div className="eval-result-label">Data Source</div>
-                  <div className="eval-result-value">RAWG API (2023 games)</div>
-                </div>
-              </div>
-              <div className="eval-code">const grouped = groupBy(games, 'genres'); const avgs = Object.entries(grouped).map(([g, gs]) => [g, avg(gs.map(x => x.rating))]); return max(avgs.map(x => x[1]));</div>
-              <div className="eval-status pass">Status: Ready for testing</div>
-            </div>
-          </div>
           <div className="chat-container">
             <div className="messages">
               {messages.length === 0 && (
                 <div style={{ textAlign: 'center', color: '#999', marginTop: '40px' }}>
                   <p>Start a conversation by asking a question about video games.</p>
-                  <p style={{ marginTop: '8px', fontSize: '14px' }}>Example: "What's the average Metacritic score for PC games in Q1 2024?"</p>
+                  <p style={{ marginTop: '8px', fontSize: '14px' }}>Or click one of the example queries above to get started.</p>
                 </div>
               )}
               {messages.map((msg, msgIdx) => (
@@ -864,6 +803,32 @@ export function getChatUIHTML(): string {
               )}
               <div ref={messagesEndRef} />
             </div>
+            {messages.length === 0 && (
+              <div className="example-queries">
+                <div className="example-queries-title">Try these example queries:</div>
+                <button
+                  className="example-query-button"
+                  onClick={() => sendMessage("What's the average Metacritic score for PC games released in Q1 2024?")}
+                  disabled={isLoading}
+                >
+                  What's the average Metacritic score for PC games released in Q1 2024?
+                </button>
+                <button
+                  className="example-query-button"
+                  onClick={() => sendMessage("Which genre had the most highly-rated games in 2023?")}
+                  disabled={isLoading}
+                >
+                  Which genre had the most highly-rated games in 2023?
+                </button>
+                <button
+                  className="example-query-button"
+                  onClick={() => sendMessage("How do PlayStation exclusive ratings compare to Xbox exclusives?")}
+                  disabled={isLoading}
+                >
+                  How do PlayStation exclusive ratings compare to Xbox exclusives?
+                </button>
+              </div>
+            )}
             <div className="input-area">
               <form onSubmit={handleSubmit}>
                 <input
