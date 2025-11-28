@@ -11,7 +11,7 @@ This project implements a Model Context Protocol (MCP) server that provides tool
 - **MCP Server**: Provides `fetch_game_data` and `execute_calculation` tools via Streamable HTTP transport
 - **RAWG Client**: Type-safe client for RAWG Video Games Database API
 - **Code Executor**: Safe, dynamic code execution for flexible calculations
-- **AI Agent**: Uses Anthropic Claude (Haiku) to orchestrate tools
+- **AI Agent**: Uses OpenAI or Anthropic models to orchestrate tools
 - **UI**: Chat interface with evaluation metrics display
 
 ## Using with Cursor
@@ -19,6 +19,16 @@ This project implements a Model Context Protocol (MCP) server that provides tool
 This server implements the Model Context Protocol and can be connected directly to Cursor as a remote MCP server. See [CURSOR_MCP_SETUP.md](./docs/CURSOR_MCP_SETUP.md) for configuration instructions.
 
 **Server URL**: `https://cf-rawg.dkalaslioglu.workers.dev/mcp`
+
+## Evaluation Panel (Frontend)
+
+The chat UI includes a right-side Evaluation panel that:
+- Shows the last `fetch_game_data` filters, counts, summaries, and warnings
+- Captures each `execute_calculation` call as a snapshot (code + data)
+- Lets you re-run the calculation locally (with `avg`, `sum`, `min`, `max`, `groupBy`)
+- Compares manual vs server result and reports PASS/FAIL
+
+See detailed behavior and usage in [docs/EVALUATION.md](./docs/EVALUATION.md).
 
 ## Setup
 
@@ -206,6 +216,22 @@ The QuickJS WASM module adds approximately **600KB** to the worker bundle:
 - After: ~1495 KB (gzip: ~420 KB)
 
 This is acceptable for the functionality provided, as it enables full JavaScript execution in a sandboxed environment.
+
+## Time Spent
+
+Approximate breakdown of effort:
+
+- Phase 0 — Architecture and research (project shaping, RAWG docs, MCP docs, plan refinement): ~1.0 h
+- Phase 1 — RAWG client domain (types, filters, client, integration test): ~1.0 h
+- Phase 2 — Code execution domain (QuickJS WASM sandbox, validator, runtime): ~3.5 h
+- Phase 3 — MCP server domain (tools, server wiring, unit tests): ~1.0 h
+- Phase 4 — Agent orchestration (AI SDK integration, tools mapping, prompts): ~1.5 h
+- Phase 5 — UI and evaluation display (chat UI, streaming, eval panel): ~2.0 h
+- Phase 6 — Testing and refinement (unit + integration, streaming polish): ~1.0 h
+- Phase 7 — Deployment (Cloudflare configuration, wrangler, prod checks): ~0.5 h
+- Debugging and polish (performance trimming, CORS, Cursor Streamable HTTP): ~2.5 h
+
+Total: ~14.0 hours
 
 ## License
 
