@@ -640,7 +640,7 @@ export function getChatUIHTML(): string {
   <script type="text/babel">
     const { useState, useRef, useEffect, useCallback } = React;
 
-    function useChat({ api, onError }) {
+    function useChat({ api, onError, isNearBottom, requestForceScroll }) {
       const [messages, setMessages] = useState([]);
       const [input, setInput] = useState('');
       const [isLoading, setIsLoading] = useState(false);
@@ -718,6 +718,13 @@ export function getChatUIHTML(): string {
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\\n');
             buffer = lines.pop() || ''; // Keep incomplete line in buffer
+            // Capture near-bottom state before applying updates from this chunk
+            let wasNearBottom = true;
+            try {
+              if (typeof isNearBottom === 'function') {
+                wasNearBottom = !!isNearBottom();
+              }
+            } catch (_) {}
 
             for (const line of lines) {
               // Only skip empty lines when not in the middle of a text chunk
@@ -1002,6 +1009,10 @@ export function getChatUIHTML(): string {
                 // Ignore parse errors for non-JSON lines
                 console.debug('Stream parse error:', e, 'Line:', line);
               }
+            }
+            // After applying all updates for this chunk, request a forced scroll if we were near bottom
+            if (wasNearBottom && typeof requestForceScroll === 'function') {
+              try { requestForceScroll(); } catch (_) {}
             }
           }
         } catch (err) {
@@ -1355,6 +1366,7 @@ export function getChatUIHTML(): string {
       // Track expanded state for Input and Output separately
       const [expandedInputs, setExpandedInputs] = useState(new Set());
       const [expandedOutputs, setExpandedOutputs] = useState(new Set());
+      const [scrollTick, setScrollTick] = useState(0);
       
       const { 
         messages, input, handleInputChange, handleSubmit, sendMessage, isLoading, error, 
@@ -1364,6 +1376,13 @@ export function getChatUIHTML(): string {
         onError: (error) => {
           console.error('Chat error:', error);
         },
+        isNearBottom: () => {
+          const el = messagesRef.current;
+          if (!el) return true;
+          const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+          return distance < 160;
+        },
+        requestForceScroll: () => setScrollTick(t => t + 1),
       });
 
       // Auto-focus input after messages update (when loading completes)
@@ -1412,6 +1431,14 @@ export function getChatUIHTML(): string {
       useEffect(() => {
         scrollToBottom();
       }, [messages, scrollToBottom]);
+      
+      // If we were near bottom before a streaming update and the eval panel changed layout,
+      // force-scroll the chat container back to bottom after updates complete.
+      useEffect(() => {
+        if (scrollTick > 0) {
+          scrollToBottom(true);
+        }
+      }, [scrollTick, lastFetch, lastCalc, calcHistory, scrollToBottom]);
 
       const handleKeyPress = (e) => {
         if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
