@@ -565,6 +565,7 @@ export function getChatUIHTML(): string {
           let toolCallMap = new Map(); // Map toolCallId to tool call object
           let hasToolCalls = false; // Track if tool calls have been added
           let finalAnswerMessageId = null; // ID for the final answer message (created after tool calls)
+          let inTextChunk = false; // Track whether we're inside a text chunk that may span multiple lines
 
           while (true) {
             const { done, value } = await reader.read();
@@ -575,7 +576,8 @@ export function getChatUIHTML(): string {
             buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
             for (const line of lines) {
-              if (!line.trim()) continue;
+              // Only skip empty lines when not in the middle of a text chunk
+              if (!line.trim() && !inTextChunk) continue;
               
               try {
                 // AI SDK data stream format: prefix:data
@@ -585,6 +587,7 @@ export function getChatUIHTML(): string {
                 if (line.startsWith('0:')) {
                   // Text chunk
                   const textDelta = line.slice(2);
+                  inTextChunk = true;
                   
                   // If tool calls exist, this is final answer - create new message bubble
                   if (hasToolCalls) {
@@ -619,19 +622,43 @@ export function getChatUIHTML(): string {
                   continue;
                 } else if (line.startsWith('2:')) {
                   // Data chunk
+                  inTextChunk = false;
                   parsed = JSON.parse(line.slice(2));
                 } else if (line.startsWith('data: ')) {
                   // SSE format fallback
+                  inTextChunk = false;
                   const data = line.slice(6);
                   if (data === '[DONE]') continue;
                   parsed = JSON.parse(data);
                 } else {
+                  // Continuation of a text chunk (preserve exact whitespace/newlines)
+                  if (inTextChunk) {
+                    const continuation = line;
+                    if (hasToolCalls) {
+                      finalContent += '\\n' + continuation;
+                      if (finalAnswerMessageId) {
+                        setMessages(prev => prev.map(msg => 
+                          msg.id === finalAnswerMessageId 
+                            ? { ...msg, content: finalContent }
+                            : msg
+                        ));
+                      }
+                    } else {
+                      initialContent += '\\n' + continuation;
+                      setMessages(prev => prev.map(msg => 
+                        msg.id === assistantMessageId 
+                          ? { ...msg, content: initialContent }
+                          : msg
+                      ));
+                    }
+                  }
                   continue;
                 }
                 
                 // Handle different message types from AI SDK streaming
                 if (parsed.type === 'text-delta') {
                   const textDelta = parsed.textDelta || '';
+                  inTextChunk = true;
                   
                   // If tool calls exist, this is final answer - create new message bubble
                   if (hasToolCalls) {
@@ -664,6 +691,7 @@ export function getChatUIHTML(): string {
                     ));
                   }
                 } else if (parsed.type === 'tool-call') {
+                  inTextChunk = false;
                   // Mark that tool calls have been added
                   hasToolCalls = true;
                   
@@ -683,6 +711,7 @@ export function getChatUIHTML(): string {
                       : msg
                   ));
                 } else if (parsed.type === 'tool-result') {
+                  inTextChunk = false;
                   // Tool call completed
                   const toolCallId = parsed.toolCallId;
                   if (toolCallId && toolCallMap.has(toolCallId)) {
@@ -704,6 +733,7 @@ export function getChatUIHTML(): string {
                     ));
                   }
                 } else if (parsed.type === 'finish') {
+                  inTextChunk = false;
                   // Stream finished
                   // Normalize usage object - convert null to 0
                   const normalizedUsage = parsed.usage ? {
