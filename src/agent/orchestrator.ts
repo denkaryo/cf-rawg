@@ -1,4 +1,4 @@
-import { generateText, tool } from 'ai';
+import { generateText, streamText, tool } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { z } from 'zod';
@@ -18,6 +18,10 @@ export interface AgentResponse {
     completionTokens?: number;
   };
   model?: string;
+}
+
+export interface StreamingAgentResponse {
+  stream: ReadableStream;
 }
 
 export class AgentOrchestrator {
@@ -167,6 +171,96 @@ export class AgentOrchestrator {
     };
     
     return response;
+  }
+
+  async processQueryWithHistoryStreaming(
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<StreamingAgentResponse> {
+    const tools = await this.buildTools();
+
+    // Get the appropriate model based on provider
+    let model;
+    if (this.provider === 'openai' && this.openaiProvider) {
+      model = this.openaiProvider(this.modelId);
+      console.log(`[AgentOrchestrator] Using OpenAI model: ${this.modelId} (streaming)`);
+    } else if (this.provider === 'anthropic' && this.anthropicProvider) {
+      model = this.anthropicProvider(this.modelId);
+      console.log(`[AgentOrchestrator] Using Anthropic model: ${this.modelId} (streaming)`);
+    } else {
+      throw new Error(`Provider ${this.provider} is not properly initialized`);
+    }
+
+    const systemPrompt = this.buildSystemPrompt();
+
+    const result = streamText({
+      model,
+      system: systemPrompt,
+      messages: messages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      })),
+      tools,
+      maxSteps: 10,
+    });
+
+    // Create a manual SSE stream that combines text deltas and tool events
+    // AI SDK's createDataStreamResponse formats data chunks, but we need to handle text separately
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          // Process text stream and full stream concurrently
+          const textStreamPromise = (async () => {
+            for await (const textDelta of result.textStream) {
+              // Format as SSE: 0: prefix for text chunks
+              const chunk = `0:${textDelta}\n`;
+              controller.enqueue(encoder.encode(chunk));
+            }
+          })();
+
+          const fullStreamPromise = (async () => {
+            for await (const chunk of result.fullStream) {
+              if (chunk.type === 'tool-call') {
+                // Format as SSE: 2: prefix for data chunks
+                const data = JSON.stringify({
+                  type: 'tool-call',
+                  toolName: chunk.toolName,
+                  toolCallId: chunk.toolCallId,
+                  args: chunk.args,
+                });
+                controller.enqueue(encoder.encode(`2:${data}\n`));
+              } else if (chunk.type === 'tool-result') {
+                const data = JSON.stringify({
+                  type: 'tool-result',
+                  toolCallId: chunk.toolCallId,
+                  result: chunk.result,
+                });
+                controller.enqueue(encoder.encode(`2:${data}\n`));
+              }
+              // text-delta chunks are handled separately via textStream
+            }
+          })();
+
+          // Wait for both streams to complete
+          await Promise.all([textStreamPromise, fullStreamPromise]);
+
+          // Finalize with finish event
+          const finishData = await result;
+          const finishDataJson = JSON.stringify({
+            type: 'finish',
+            usage: await finishData.usage,
+            finishReason: await finishData.finishReason,
+          });
+          controller.enqueue(encoder.encode(`2:${finishDataJson}\n`));
+          
+          controller.close();
+        } catch (error) {
+          controller.error(error);
+        }
+      },
+    });
+
+    return { stream };
   }
 
   private async buildTools() {

@@ -529,29 +529,143 @@ export function getChatUIHTML(): string {
         setIsLoading(true);
         setError(null);
 
+        // Create assistant message placeholder for streaming
+        const assistantMessageId = \`msg-\${Date.now()}\`;
+        const assistantMessage = {
+          id: assistantMessageId,
+          role: 'assistant',
+          content: '',
+          toolCalls: [],
+        };
+        setMessages([...newMessages, assistantMessage]);
+
         try {
+          // Use streaming endpoint (default behavior)
           const response = await fetch(api, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept': 'text/event-stream',
+            },
             body: JSON.stringify({ messages: newMessages }),
           });
 
           if (!response.ok) {
-            const errorData = await response.json();
+            const errorData = await response.json().catch(() => ({ error: 'Failed to get response' }));
             throw new Error(errorData.error || 'Failed to get response');
           }
 
-          const data = await response.json();
-          const assistantMessage = {
-            id: data.id || \`msg-\${Date.now()}\`,
-            role: 'assistant',
-            content: data.content || data.answer || '',
-            toolCalls: data.toolCalls || [],
-            usage: data.usage,
-            model: data.model,
-          };
+          // Handle streaming response (AI SDK data stream format)
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let currentContent = '';
+          let currentToolCalls = [];
+          let toolCallMap = new Map(); // Map toolCallId to tool call object
 
-          setMessages([...newMessages, assistantMessage]);
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\\n');
+            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              
+              try {
+                // AI SDK data stream format: prefix:data
+                // 0: = text chunk
+                // 2: = data chunk
+                let parsed;
+                if (line.startsWith('0:')) {
+                  // Text chunk
+                  const textDelta = line.slice(2);
+                  currentContent += textDelta;
+                  setMessages(prev => prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, content: currentContent }
+                      : msg
+                  ));
+                  continue;
+                } else if (line.startsWith('2:')) {
+                  // Data chunk
+                  parsed = JSON.parse(line.slice(2));
+                } else if (line.startsWith('data: ')) {
+                  // SSE format fallback
+                  const data = line.slice(6);
+                  if (data === '[DONE]') continue;
+                  parsed = JSON.parse(data);
+                } else {
+                  continue;
+                }
+                
+                // Handle different message types from AI SDK streaming
+                if (parsed.type === 'text-delta') {
+                  currentContent += parsed.textDelta || '';
+                  setMessages(prev => prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, content: currentContent }
+                      : msg
+                  ));
+                } else if (parsed.type === 'tool-call') {
+                  // New tool call starting
+                  const toolCall = {
+                    tool: parsed.toolName || parsed.tool,
+                    args: parsed.args || {},
+                    result: null,
+                  };
+                  if (parsed.toolCallId) {
+                    toolCallMap.set(parsed.toolCallId, toolCall);
+                  }
+                  currentToolCalls = [...currentToolCalls, toolCall];
+                  setMessages(prev => prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, toolCalls: [...currentToolCalls] }
+                      : msg
+                  ));
+                } else if (parsed.type === 'tool-result') {
+                  // Tool call completed
+                  const toolCallId = parsed.toolCallId;
+                  if (toolCallId && toolCallMap.has(toolCallId)) {
+                    const toolCall = toolCallMap.get(toolCallId);
+                    toolCall.result = parsed.result || parsed;
+                    setMessages(prev => prev.map(msg => 
+                      msg.id === assistantMessageId 
+                        ? { ...msg, toolCalls: [...currentToolCalls] }
+                        : msg
+                    ));
+                  } else if (currentToolCalls.length > 0) {
+                    // Fallback: update last tool call
+                    const lastCall = currentToolCalls[currentToolCalls.length - 1];
+                    lastCall.result = parsed.result || parsed;
+                    setMessages(prev => prev.map(msg => 
+                      msg.id === assistantMessageId 
+                        ? { ...msg, toolCalls: [...currentToolCalls] }
+                        : msg
+                    ));
+                  }
+                } else if (parsed.type === 'finish') {
+                  // Stream finished
+                  setMessages(prev => prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { 
+                          ...msg, 
+                          content: currentContent,
+                          toolCalls: currentToolCalls,
+                          usage: parsed.usage,
+                          model: parsed.model,
+                        }
+                      : msg
+                  ));
+                }
+              } catch (e) {
+                // Ignore parse errors for non-JSON lines
+                console.debug('Stream parse error:', e, 'Line:', line);
+              }
+            }
+          }
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Unknown error';
           setError({ message: errorMessage });
