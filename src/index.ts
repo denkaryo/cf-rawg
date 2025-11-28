@@ -1,5 +1,5 @@
 import { createMCPServer } from './mcp-server/server';
-import { handleMCPRequest } from './mcp-server/transport/http';
+import { handleStreamableHTTPRequest } from './mcp-server/transport/streamable-http';
 import { AgentOrchestrator } from './agent/orchestrator';
 import { getChatUIHTML } from './ui/chat';
 
@@ -19,7 +19,7 @@ export default {
       }
 
       const server = createMCPServer({ rawgApiKey: env.RAWG_API_KEY });
-      return handleMCPRequest(request, server);
+      return handleStreamableHTTPRequest(request, server);
     }
 
     if (url.pathname === '/api/debug' && request.method === 'GET') {

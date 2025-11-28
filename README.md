@@ -8,11 +8,17 @@ This project implements a Model Context Protocol (MCP) server that provides tool
 
 ## Architecture
 
-- **MCP Server**: Provides `fetch_game_data` and `execute_calculation` tools
+- **MCP Server**: Provides `fetch_game_data` and `execute_calculation` tools via Streamable HTTP transport
 - **RAWG Client**: Type-safe client for RAWG Video Games Database API
 - **Code Executor**: Safe, dynamic code execution for flexible calculations
 - **AI Agent**: Uses Anthropic Claude (Haiku) to orchestrate tools
 - **UI**: Chat interface with evaluation metrics display
+
+## Using with Cursor
+
+This server implements the Model Context Protocol and can be connected directly to Cursor as a remote MCP server. See [CURSOR_MCP_SETUP.md](./docs/CURSOR_MCP_SETUP.md) for configuration instructions.
+
+**Server URL**: `https://cf-rawg.dkalaslioglu.workers.dev/mcp`
 
 ## Setup
 
