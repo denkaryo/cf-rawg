@@ -65,6 +65,7 @@ export function getChatUIHTML(): string {
       display: grid;
       grid-template-columns: 1fr 380px;
       gap: 20px;
+      align-items: start;
     }
 
     .left-pane {
@@ -78,6 +79,8 @@ export function getChatUIHTML(): string {
       top: 20px;
       align-self: start;
       height: fit-content;
+      width: 100%;
+      min-width: 0;
     }
 
     @media (max-width: 1100px) {
@@ -87,6 +90,9 @@ export function getChatUIHTML(): string {
       .right-pane {
         position: static;
       }
+      .eval-panel {
+        max-height: none !important;
+      }
     }
 
     /* Evaluation panel */
@@ -95,6 +101,9 @@ export function getChatUIHTML(): string {
       border-radius: 8px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
       padding: 16px;
+      max-height: calc(100vh - 200px);
+      overflow-y: auto;
+      width: 100%;
     }
 
     .eval-title {
@@ -1341,6 +1350,7 @@ export function getChatUIHTML(): string {
 
     function ChatApp() {
       const messagesEndRef = useRef(null);
+      const messagesRef = useRef(null);
       const inputRef = useRef(null);
       // Track expanded state for Input and Output separately
       const [expandedInputs, setExpandedInputs] = useState(new Set());
@@ -1389,13 +1399,19 @@ export function getChatUIHTML(): string {
         });
       }, []);
 
-      const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      };
+      const scrollToBottom = useCallback((force = false) => {
+        const el = messagesRef.current;
+        if (!el) return;
+        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+        // Only auto-scroll if already near the bottom, or when forced
+        if (force || distance < 120) {
+          el.scrollTop = el.scrollHeight;
+        }
+      }, []);
 
       useEffect(() => {
         scrollToBottom();
-      }, [messages]);
+      }, [messages, scrollToBottom]);
 
       const handleKeyPress = (e) => {
         if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
@@ -1413,7 +1429,7 @@ export function getChatUIHTML(): string {
           <div className="app-layout">
             <div className="left-pane">
               <div className="chat-container">
-            <div className="messages">
+                <div className="messages" ref={messagesRef}>
               {messages.length === 0 && (
                 <div style={{ textAlign: 'center', color: '#999', marginTop: '40px' }}>
                   <p>Start a conversation by asking a question about video games.</p>
