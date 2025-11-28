@@ -1,0 +1,32 @@
+# Local development variables for `wrangler dev`
+# Copy to `.dev.vars` and fill in real values.
+#
+# NOTE:
+# - These values are used by the Cloudflare Worker when running locally with `wrangler dev`.
+# - For production, set variables via `wrangler secret put` or Cloudflare dashboard.
+# - For Node-based tests (vitest/integration), you can also create a separate `.env` (see README).
+
+# Required: RAWG API key (https://rawg.io/apidocs)
+RAWG_API_KEY=your_rawg_api_key_here
+
+# LLM provider: "openai" or "anthropic"
+LLM_PROVIDER=openai
+
+# OpenAI configuration (if LLM_PROVIDER=openai)
+OPENAI_API_KEY=your_openai_api_key_here
+# Default model used if not provided: gpt-4o-mini
+OPENAI_MODEL=gpt-4o-mini
+
+# Anthropic configuration (if LLM_PROVIDER=anthropic)
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+# Default model used if not provided: claude-3-5-haiku-20241022
+CLAUDE_MODEL=claude-3-5-haiku-20241022
+
+# Basic authentication for the app (UI and /api/chat)
+BASIC_AUTH_USER=admin
+BASIC_AUTH_PASS=change_this_strong_password
+
+# API key for MCP transport (Streamable HTTP)
+MCP_API_KEY=change_this_strong_api_key
+
+

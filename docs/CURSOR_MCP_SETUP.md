@@ -17,7 +17,7 @@ https://cf-rawg.dkalaslioglu.workers.dev/mcp
 5. Enter the following:
    - **Name**: `cf-rawg` or `Game Analytics`
    - **URL**: `https://cf-rawg.dkalaslioglu.workers.dev/mcp`
-   - **Headers** (if needed): Leave empty or add custom headers
+   - **Headers**: add `x-api-key: <your MCP_API_KEY>`
 6. Save the configuration
 
 ### Method 2: Using mcp.json
@@ -29,7 +29,10 @@ Create or edit `.cursor/mcp.json` in your project:
   "mcpServers": {
     "cf-rawg": {
       "url": "https://cf-rawg.dkalaslioglu.workers.dev/mcp",
-      "transport": "streamableHttp"
+      "transport": "streamableHttp",
+      "headers": {
+        "x-api-key": "${env:MCP_API_KEY}"
+      }
     }
   }
 }
@@ -41,7 +44,10 @@ Or for global configuration, edit `~/.cursor/mcp.json`:
 {
   "mcpServers": {
     "game-analytics": {
-      "url": "https://cf-rawg.dkalaslioglu.workers.dev/mcp"
+      "url": "https://cf-rawg.dkalaslioglu.workers.dev/mcp",
+      "headers": {
+        "x-api-key": "${env:MCP_API_KEY}"
+      }
     }
   }
 }

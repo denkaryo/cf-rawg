@@ -7,7 +7,45 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
+    // Helper: Basic auth for UI and /api endpoints
+    const isAuthorizedBasic = (): boolean => {
+      const header = request.headers.get('authorization') || '';
+      if (!env.BASIC_AUTH_USER || !env.BASIC_AUTH_PASS) return false;
+      if (!header.startsWith('Basic ')) return false;
+      try {
+        const decoded = atob(header.slice(6));
+        const [user, pass] = decoded.split(':');
+        return user === env.BASIC_AUTH_USER && pass === env.BASIC_AUTH_PASS;
+      } catch {
+        return false;
+      }
+    };
+    const unauthorizedBasic = () =>
+      new Response('Unauthorized', {
+        status: 401,
+        headers: {
+          'WWW-Authenticate': 'Basic realm="cf-rawg"',
+          'Content-Type': 'text/plain',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+
     if (url.pathname.startsWith('/mcp')) {
+      // MCP API key gate (skip OPTIONS for CORS preflight)
+      if (request.method !== 'OPTIONS') {
+        const apiKey = request.headers.get('x-api-key') || request.headers.get('X-Api-Key');
+        if (!env.MCP_API_KEY || !apiKey || apiKey !== env.MCP_API_KEY) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+              'Access-Control-Allow-Headers': 'Content-Type, x-api-key',
+            },
+          });
+        }
+      }
       if (!env.RAWG_API_KEY) {
         return new Response(
           JSON.stringify({ error: 'RAWG_API_KEY not configured' }),
@@ -23,6 +61,7 @@ export default {
     }
 
     if (url.pathname === '/api/debug' && request.method === 'GET') {
+      if (!isAuthorizedBasic()) return unauthorizedBasic();
       const provider = (env.LLM_PROVIDER || 'openai') as 'openai' | 'anthropic';
       const modelName = provider === 'openai' ? env.OPENAI_MODEL : env.CLAUDE_MODEL;
       
@@ -49,6 +88,7 @@ export default {
     }
 
     if (url.pathname === '/api/chat' && request.method === 'POST') {
+      if (!isAuthorizedBasic()) return unauthorizedBasic();
       // Check if client wants streaming (default to streaming for better UX)
       const acceptHeader = request.headers.get('accept') || '';
       const streamParam = url.searchParams.get('stream');
@@ -60,10 +100,12 @@ export default {
     }
 
     if (url.pathname === '/' || url.pathname === '/index.html') {
+      if (!isAuthorizedBasic()) return unauthorizedBasic();
       return serveChatUI();
     }
 
     if (url.pathname.startsWith('/ui/')) {
+      if (!isAuthorizedBasic()) return unauthorizedBasic();
       return serveStaticFile(url.pathname, env);
     }
 
@@ -80,6 +122,9 @@ interface Env {
   LLM_PROVIDER?: 'openai' | 'anthropic';
   OPENAI_MODEL?: string;
   CLAUDE_MODEL?: string;
+  BASIC_AUTH_USER?: string;
+  BASIC_AUTH_PASS?: string;
+  MCP_API_KEY?: string;
 }
 
 async function handleChatRequestStreaming(request: Request, env: Env): Promise<Response> {

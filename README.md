@@ -56,11 +56,21 @@ This runs `scripts/copy-wasm-file-into-src.sh` which copies the required WASM fi
 
 ### Environment Variables
 
-Copy `.env.example` to `.env` and fill in your API keys:
+For local development (wrangler dev), copy `.dev.vars.example` to `.dev.vars` and fill in your keys:
+
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+These variables are loaded by the Worker when running locally.
+
+For Node-based tests (vitest/integration) that use `dotenv`, you can optionally copy `.env.example` to `.env` and fill the same keys:
 
 ```bash
 cp .env.example .env
 ```
+
+In production, set variables using `wrangler secret put` or in the Cloudflare dashboard.
 
 ### Local Development
 
@@ -85,6 +95,20 @@ pnpm test:integration
 ```bash
 pnpm deploy
 ```
+
+## Authentication (test-only)
+
+For this project, we added simple, no-database authentication:
+
+- App (UI and `/api/chat`): HTTP Basic Auth
+  - Variables: `BASIC_AUTH_USER`, `BASIC_AUTH_PASS`
+  - Example:
+    - Header: `Authorization: Basic base64(username:password)`
+- MCP (`/mcp` Streamable HTTP): API key header
+  - Variable: `MCP_API_KEY`
+  - Header: `x-api-key: <your key>`
+
+These are intended for demonstration only. For production, we would prefer Cloudflare Access or OAuth.
 
 ## Project Structure
 
@@ -232,6 +256,14 @@ Approximate breakdown of effort:
 - Debugging and polish (performance trimming, CORS, Cursor Streamable HTTP): ~2.5 h
 
 Total: ~14.0 hours
+
+## Future Improvements
+
+- Replace test-only auth with Cloudflare Access or OAuth for both UI and MCP.
+- Per-user or per-tenant API keys with rotation and scoping.
+- Executor hard timeouts via QuickJS interrupt callbacks to preempt infinite loops.
+- Usage metrics and audit logs for tool calls and calculations.
+- Optional persisted caching for RAWG responses to reduce API calls and latency.
 
 ## License
 
