@@ -89,9 +89,9 @@ export async function handleFetchGameData(
 
   // Trim response to reduce payload size
   // Determine if we need platforms/genres based on query type
-  // For most statistical queries, we don't need these nested fields
+  // Always include genres - needed for genre analysis queries even when not filtering by genre
   const needsPlatforms = params.platform !== undefined;
-  const needsGenres = params.genre !== undefined;
+  const needsGenres = true; // Always include genres - required for genre analysis queries
   
   const trimmed = trimGameResponse(response.results, response.count, {
     maxGames: filters.page_size || 20,
