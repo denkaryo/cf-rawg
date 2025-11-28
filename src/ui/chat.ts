@@ -798,7 +798,9 @@ export function getChatUIHTML(): string {
     function ChatApp() {
       const messagesEndRef = useRef(null);
       const inputRef = useRef(null);
-      const [expandedToolCalls, setExpandedToolCalls] = useState(new Set());
+      // Track expanded state for Input and Output separately
+      const [expandedInputs, setExpandedInputs] = useState(new Set());
+      const [expandedOutputs, setExpandedOutputs] = useState(new Set());
       
       const { messages, input, handleInputChange, handleSubmit, sendMessage, isLoading, error } = useChat({
         api: '/api/chat',
@@ -814,9 +816,22 @@ export function getChatUIHTML(): string {
         }
       }, [isLoading, messages]);
 
-      const toggleToolCall = useCallback((messageIdx, callIdx) => {
+      const toggleInput = useCallback((messageIdx, callIdx) => {
         const key = \`\${messageIdx}-\${callIdx}\`;
-        setExpandedToolCalls(prev => {
+        setExpandedInputs(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(key)) {
+            newSet.delete(key);
+          } else {
+            newSet.add(key);
+          }
+          return newSet;
+        });
+      }, []);
+
+      const toggleOutput = useCallback((messageIdx, callIdx) => {
+        const key = \`\${messageIdx}-\${callIdx}\`;
+        setExpandedOutputs(prev => {
           const newSet = new Set(prev);
           if (newSet.has(key)) {
             newSet.delete(key);
@@ -867,31 +882,44 @@ export function getChatUIHTML(): string {
                       <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '13px' }}>Tool Calls:</div>
                       {msg.toolCalls.map((call, callIdx) => {
                         const key = \`\${msgIdx}-\${callIdx}\`;
-                        const isExpanded = expandedToolCalls.has(key);
+                        const isInputExpanded = expandedInputs.has(key);
+                        const isOutputExpanded = expandedOutputs.has(key);
                         const hasResult = call.result !== null && call.result !== undefined;
                         
                         return (
-                          <div key={callIdx} className={\`tool-call \${isExpanded ? 'expanded' : ''}\`}>
+                          <div key={callIdx} className="tool-call">
                             <div className="tool-name">{call.tool}</div>
                             
-                            <div className="tool-call-section">
-                              <div className="tool-call-section-label">Input</div>
-                              <div className="tool-call-content">
-                                {JSON.stringify(call.args, null, 2)}
-                              </div>
+                            {/* Input Section - Collapsible */}
+                            <div 
+                              className={\`tool-call-toggle \${isInputExpanded ? 'expanded' : ''}\`}
+                              onClick={() => toggleInput(msgIdx, callIdx)}
+                            >
+                              <span className="tool-call-toggle-icon">▶</span>
+                              <span>{isInputExpanded ? 'Hide Input' : 'View Input'}</span>
                             </div>
                             
+                            {isInputExpanded && (
+                              <div className="tool-call-section">
+                                <div className="tool-call-section-label">Input</div>
+                                <div className="tool-call-content">
+                                  {JSON.stringify(call.args, null, 2)}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Output Section - Collapsible */}
                             {hasResult && (
                               <>
                                 <div 
-                                  className={\`tool-call-toggle \${isExpanded ? 'expanded' : ''}\`}
-                                  onClick={() => toggleToolCall(msgIdx, callIdx)}
+                                  className={\`tool-call-toggle \${isOutputExpanded ? 'expanded' : ''}\`}
+                                  onClick={() => toggleOutput(msgIdx, callIdx)}
                                 >
                                   <span className="tool-call-toggle-icon">▶</span>
-                                  <span>{isExpanded ? 'Hide Result' : 'View Result'}</span>
+                                  <span>{isOutputExpanded ? 'Hide Output' : 'View Output'}</span>
                                 </div>
                                 
-                                {isExpanded && (
+                                {isOutputExpanded && (
                                   <div className="tool-call-section">
                                     <div className="tool-call-section-label">Output</div>
                                     <div className="tool-call-content">
