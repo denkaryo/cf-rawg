@@ -60,6 +60,129 @@ export function getChatUIHTML(): string {
       font-size: 14px;
     }
 
+    /* App layout (chat left, evaluation right) */
+    .app-layout {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 20px;
+    }
+
+    .left-pane {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .right-pane {
+      position: sticky;
+      top: 20px;
+      align-self: start;
+      height: fit-content;
+    }
+
+    @media (max-width: 1100px) {
+      .app-layout {
+        grid-template-columns: 1fr;
+      }
+      .right-pane {
+        position: static;
+      }
+    }
+
+    /* Evaluation panel */
+    .eval-panel {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 16px;
+    }
+
+    .eval-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #222;
+      margin-bottom: 8px;
+    }
+
+    .eval-subtitle {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 12px;
+    }
+
+    .eval-section {
+      border: 1px solid #e9ecef;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 12px;
+      background: #fafafa;
+    }
+
+    .eval-section h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+    }
+
+    .eval-kv {
+      font-size: 12px;
+      color: #444;
+      margin: 2px 0;
+      word-break: break-word;
+    }
+
+    .eval-pre {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 8px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 240px;
+      overflow: auto;
+    }
+
+    .eval-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .eval-actions button {
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+      border: 1px solid #e0e0e0;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .eval-actions button:hover {
+      background: #f4f6f8;
+    }
+
+    .eval-status {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      margin-top: 8px;
+    }
+
+    .eval-status.pass {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .eval-status.fail {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
     .chat-container {
       background: white;
       border-radius: 8px;
@@ -513,6 +636,8 @@ export function getChatUIHTML(): string {
       const [input, setInput] = useState('');
       const [isLoading, setIsLoading] = useState(false);
       const [error, setError] = useState(null);
+      const [lastFetch, setLastFetch] = useState(null);
+      const [lastCalc, setLastCalc] = useState(null);
 
       const handleInputChange = useCallback((e) => {
         setInput(e.target.value);
@@ -566,6 +691,9 @@ export function getChatUIHTML(): string {
           let hasToolCalls = false; // Track if tool calls have been added
           let finalAnswerMessageId = null; // ID for the final answer message (created after tool calls)
           let inTextChunk = false; // Track whether we're inside a text chunk that may span multiple lines
+          // Track pending tool args for evaluation capture
+          let pendingFetchArgs = null;
+          let pendingCalcArgs = null;
 
           while (true) {
             const { done, value } = await reader.read();
@@ -710,6 +838,26 @@ export function getChatUIHTML(): string {
                       ? { ...msg, toolCalls: [...currentToolCalls] }
                       : msg
                   ));
+                  // Capture evaluation state on tool-call
+                  if ((toolCall.tool || '').includes('fetch_game_data')) {
+                    pendingFetchArgs = toolCall.args || {};
+                  }
+                  if ((toolCall.tool || '').includes('execute_calculation')) {
+                    pendingCalcArgs = toolCall.args || {};
+                    // Prepare deterministic data snapshot for manual run
+                    try {
+                      const snapshot = pendingCalcArgs && pendingCalcArgs.data ? JSON.parse(JSON.stringify(pendingCalcArgs.data)) : null;
+                      setLastCalc({
+                        code: pendingCalcArgs.code || '',
+                        data: snapshot,
+                        serverResult: null,
+                        snapshotHash: snapshot ? hashString(stableStringify(snapshot)) : null,
+                        timestamp: Date.now(),
+                      });
+                    } catch (e) {
+                      // Ignore snapshot errors
+                    }
+                  }
                 } else if (parsed.type === 'tool-result') {
                   inTextChunk = false;
                   // Tool call completed
@@ -722,6 +870,21 @@ export function getChatUIHTML(): string {
                         ? { ...msg, toolCalls: [...currentToolCalls] }
                         : msg
                     ));
+                    // Update evaluation state on tool-result
+                    const toolName = (toolCall.tool || '').toString();
+                    if (toolName.includes('fetch_game_data')) {
+                      try {
+                        setLastFetch({
+                          args: pendingFetchArgs,
+                          result: parsed.result,
+                          timestamp: Date.now(),
+                        });
+                      } catch (e) {
+                        // ignore
+                      }
+                    } else if (toolName.includes('execute_calculation')) {
+                      setLastCalc(prev => prev ? { ...prev, serverResult: parsed.result } : prev);
+                    }
                   } else if (currentToolCalls.length > 0) {
                     // Fallback: update last tool call
                     const lastCall = currentToolCalls[currentToolCalls.length - 1];
@@ -731,6 +894,17 @@ export function getChatUIHTML(): string {
                         ? { ...msg, toolCalls: [...currentToolCalls] }
                         : msg
                     ));
+                    // Best-effort eval state update
+                    const toolName = (lastCall.tool || '').toString();
+                    if (toolName.includes('fetch_game_data')) {
+                      setLastFetch({
+                        args: pendingFetchArgs,
+                        result: parsed.result,
+                        timestamp: Date.now(),
+                      });
+                    } else if (toolName.includes('execute_calculation')) {
+                      setLastCalc(prev => prev ? { ...prev, serverResult: parsed.result } : prev);
+                    }
                   }
                 } else if (parsed.type === 'finish') {
                   inTextChunk = false;
@@ -820,7 +994,196 @@ export function getChatUIHTML(): string {
         sendMessage,
         isLoading,
         error,
+        lastFetch,
+        lastCalc,
       };
+    }
+
+    // Stable stringify for deep comparison (sort object keys)
+    function stableStringify(value) {
+      const seen = new WeakSet();
+      const stringify = (val) => {
+        if (val && typeof val === 'object') {
+          if (seen.has(val)) return '"[Circular]"';
+          seen.add(val);
+          if (Array.isArray(val)) {
+            return '[' + val.map(v => stringify(v)).join(',') + ']';
+          }
+          const keys = Object.keys(val).sort();
+          return '{' + keys.map(k => JSON.stringify(k) + ':' + stringify(val[k])).join(',') + '}';
+        }
+        return JSON.stringify(val);
+      };
+      return stringify(value);
+    }
+
+    // Simple hash for snapshot identification
+    function hashString(str) {
+      let h = 5381;
+      for (let i = 0; i < str.length; i++) {
+        h = ((h << 5) + h) ^ str.charCodeAt(i);
+      }
+      return (h >>> 0).toString(36);
+    }
+
+    // Helper functions available to manual calculations (browser-side)
+    const helpers = {
+      avg: (arr) => Array.isArray(arr) && arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : NaN,
+      sum: (arr) => Array.isArray(arr) ? arr.reduce((a,b)=>a+b,0) : 0,
+      min: (arr) => Array.isArray(arr) && arr.length ? Math.min(...arr) : NaN,
+      max: (arr) => Array.isArray(arr) && arr.length ? Math.max(...arr) : NaN,
+      groupBy: (arr, key) => {
+        if (!Array.isArray(arr)) return {};
+        const getNested = (obj, path) => path.split('.').reduce((v,k)=> (v==null?undefined:v[k]), obj);
+        const out = {};
+        for (const item of arr) {
+          const k = String(getNested(item, key));
+          if (!out[k]) out[k] = [];
+          out[k].push(item);
+        }
+        return out;
+      }
+    };
+
+    function runManualCalculation(code, data) {
+      try {
+        const trimmed = (code || '').trim();
+        if (!trimmed) return { success: false, error: 'Code is empty' };
+        const needsWrap = /\breturn\s+/.test(trimmed);
+        const wrapped = needsWrap ? \`(function(){ \${trimmed} })()\` : trimmed;
+        const fn = new Function('data', 'avg', 'sum', 'min', 'max', 'groupBy', '"use strict";\\n' + wrapped);
+        const value = fn(data, helpers.avg, helpers.sum, helpers.min, helpers.max, helpers.groupBy);
+        return { success: true, value };
+      } catch (e) {
+        return { success: false, error: e && e.message ? e.message : String(e) };
+      }
+    }
+
+    function EvaluationPanel({ lastFetch, lastCalc }) {
+      const [manualCode, setManualCode] = useState('');
+      const [manualResult, setManualResult] = useState(null);
+      const [manualError, setManualError] = useState(null);
+
+      useEffect(() => {
+        if (lastCalc && lastCalc.code && !manualCode) {
+          setManualCode(lastCalc.code);
+        }
+      }, [lastCalc]);
+
+      const doManualRun = () => {
+        setManualError(null);
+        setManualResult(null);
+        if (!lastCalc || !lastCalc.data) {
+          setManualError('No calculation data available. Trigger a calculation first.');
+          return;
+        }
+        const res = runManualCalculation(manualCode, lastCalc.data);
+        if (res.success) {
+          setManualResult(res.value);
+        } else {
+          setManualError(res.error || 'Manual execution failed');
+        }
+      };
+
+      const copyCode = () => {
+        try {
+          navigator.clipboard.writeText(manualCode || '');
+        } catch (_) {}
+      };
+
+      const downloadData = () => {
+        if (!lastCalc || !lastCalc.data) return;
+        const blob = new Blob([JSON.stringify(lastCalc.data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = \`data-\${lastCalc.snapshotHash || 'snapshot'}.json\`;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      const serverValue = lastCalc && lastCalc.serverResult ? lastCalc.serverResult.result : undefined;
+      const comparable = serverValue !== undefined && manualResult !== null;
+      const matches = comparable ? stableStringify(serverValue) === stableStringify(manualResult) : undefined;
+
+      return (
+        <div className="eval-panel">
+          <div className="eval-title">Evaluation</div>
+          <div className="eval-subtitle">Inspect fetched data and calculations. Re-run the calculation manually in your browser.</div>
+
+          <div className="eval-section">
+            <h3>Fetched Data</h3>
+            {!lastFetch && <div className="eval-kv">No fetch recorded yet. Ask a question to trigger data fetch.</div>}
+            {lastFetch && (
+              <>
+                <div className="eval-kv"><strong>Filters:</strong> {JSON.stringify(lastFetch.args || {})}</div>
+                {lastFetch.result && (
+                  <>
+                    <div className="eval-kv"><strong>Total:</strong> {lastFetch.result.count != null ? lastFetch.result.count : 'N/A'}</div>
+                    {lastFetch.result.summary && (
+                      <div className="eval-kv">
+                        <strong>Summary:</strong> avgMetacritic={String(lastFetch.result.summary.avgMetacritic)}, avgRating={String(lastFetch.result.summary.avgRating)}, shown={String(lastFetch.result.summary.shown)}
+                      </div>
+                    )}
+                    {lastFetch.result.warning && <div className="eval-kv"><strong>Warning:</strong> {lastFetch.result.warning}</div>}
+                    {lastFetch.result.suggestion && <div className="eval-kv"><strong>Suggestion:</strong> {lastFetch.result.suggestion}</div>}
+                    <div className="eval-kv" style={{ marginTop: '6px' }}><strong>Games (preview):</strong></div>
+                    <div className="eval-pre">
+                      {JSON.stringify((lastFetch.result.games || []).slice(0, 5), null, 2)}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="eval-section">
+            <h3>Calculation (server)</h3>
+            {!lastCalc && <div className="eval-kv">No calculation recorded yet. Trigger a calculation to view details.</div>}
+            {lastCalc && (
+              <>
+                <div className="eval-kv"><strong>Snapshot:</strong> {lastCalc.snapshotHash || 'N/A'}</div>
+                <div className="eval-kv" style={{ marginTop: '6px' }}><strong>Code (server-used):</strong></div>
+                <div className="eval-pre">{lastCalc.code || ''}</div>
+                {lastCalc.serverResult && (
+                  <>
+                    <div className="eval-kv" style={{ marginTop: '6px' }}><strong>Server result:</strong></div>
+                    <div className="eval-pre">{JSON.stringify(lastCalc.serverResult, null, 2)}</div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="eval-section">
+            <h3>Manual calculation (browser)</h3>
+            <div className="eval-kv">Runs locally with the same helpers: avg, sum, min, max, groupBy.</div>
+            <textarea
+              value={manualCode}
+              onChange={(e) => setManualCode(e.target.value)}
+              placeholder="Paste or edit calculation code here..."
+              style={{ width: '100%', height: '120px', fontFamily: 'Courier New, monospace', fontSize: '12px', padding: '8px', borderRadius: '6px', border: '1px solid #e0e0e0', marginTop: '8px' }}
+            />
+            <div className="eval-actions">
+              <button onClick={doManualRun} disabled={!lastCalc || !lastCalc.data}>Calculate manually</button>
+              <button onClick={copyCode} disabled={!manualCode}>Copy code</button>
+              <button onClick={downloadData} disabled={!lastCalc || !lastCalc.data}>Download data.json</button>
+            </div>
+            {manualError && <div className="eval-status fail" style={{ display: 'block' }}>Manual execution error: {manualError}</div>}
+            {manualResult !== null && (
+              <>
+                <div className="eval-kv" style={{ marginTop: '8px' }}><strong>Manual result:</strong></div>
+                <div className="eval-pre">{JSON.stringify(manualResult, null, 2)}</div>
+              </>
+            )}
+            {comparable && (
+              <div className={\`eval-status \${matches ? 'pass' : 'fail'}\`} style={{ display: 'block' }}>
+                {matches ? 'PASS: Manual result matches server result' : 'FAIL: Manual result differs from server result'}
+              </div>
+            )}
+          </div>
+        </div>
+      );
     }
 
     function formatToolResult(result) {
@@ -915,7 +1278,7 @@ export function getChatUIHTML(): string {
       const [expandedInputs, setExpandedInputs] = useState(new Set());
       const [expandedOutputs, setExpandedOutputs] = useState(new Set());
       
-      const { messages, input, handleInputChange, handleSubmit, sendMessage, isLoading, error } = useChat({
+      const { messages, input, handleInputChange, handleSubmit, sendMessage, isLoading, error, lastFetch, lastCalc } = useChat({
         api: '/api/chat',
         onError: (error) => {
           console.error('Chat error:', error);
@@ -976,7 +1339,9 @@ export function getChatUIHTML(): string {
             <h1>Game Analytics AI Agent</h1>
             <p>Ask questions about video game data. The agent will fetch data from RAWG API and perform calculations.</p>
           </div>
-          <div className="chat-container">
+          <div className="app-layout">
+            <div className="left-pane">
+              <div className="chat-container">
             <div className="messages">
               {messages.length === 0 && (
                 <div style={{ textAlign: 'center', color: '#999', marginTop: '40px' }}>
@@ -1102,7 +1467,7 @@ export function getChatUIHTML(): string {
                 </button>
               </div>
             )}
-            <div className="input-area">
+                <div className="input-area">
               <form onSubmit={handleSubmit}>
                 <input
                   ref={inputRef}
@@ -1123,6 +1488,11 @@ export function getChatUIHTML(): string {
                   Error: {error.message || 'Unknown error'}
                 </div>
               )}
+                </div>
+              </div>
+            </div>
+            <div className="right-pane">
+              <EvaluationPanel lastFetch={lastFetch} lastCalc={lastCalc} />
             </div>
           </div>
         </div>
