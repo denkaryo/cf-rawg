@@ -226,6 +226,7 @@ export class AgentOrchestrator {
             for await (const chunk of result.fullStream) {
               if (chunk.type === 'tool-call') {
                 // Format as SSE: 2: prefix for data chunks
+                // Send immediately to ensure real-time streaming
                 const data = JSON.stringify({
                   type: 'tool-call',
                   toolName: chunk.toolName,
@@ -233,6 +234,8 @@ export class AgentOrchestrator {
                   args: chunk.args,
                 });
                 controller.enqueue(encoder.encode(`2:${data}\n`));
+                // Note: AI SDK may emit multiple tool-call chunks together
+                // This is expected behavior - LLM generates all tool calls in one step
               } else if (chunk.type === 'tool-result') {
                 const data = JSON.stringify({
                   type: 'tool-result',
@@ -364,14 +367,18 @@ Use this date when interpreting relative time references (e.g., "this year", "la
 
 ## Your Workflow
 
-When answering analytical questions, follow this three-step process:
+When answering analytical questions, follow this four-step process:
 
-1. **Fetch Data First**: Use the \`fetch_game_data\` tool to retrieve game data based on the user's query (platform, genre, date range, etc.)
+0. **Explain Your Plan First**: Before calling any tools, briefly explain your approach to the user. Describe what data you need to fetch and what calculations you'll perform. This helps the user understand your reasoning process. For example: "I'll fetch PC games from Q1 2024 and calculate their average Metacritic score."
+
+1. **Fetch Data**: Use the \`fetch_game_data\` tool to retrieve game data based on the user's query (platform, genre, date range, etc.)
 2. **Calculate Results**: Use the \`execute_calculation\` tool to perform calculations on the fetched data
    - **CRITICAL**: You MUST pass the result from \`fetch_game_data\` as the \`data\` parameter
    - Format: \`{code: "...", data: {games: [...]}}\`
    - The \`data\` parameter is REQUIRED - always include it!
 3. **Provide Final Answer**: After completing calculations, ALWAYS provide a clear, natural language explanation of the results to answer the user's question. Do not stop after tool calls - you must explain what the results mean and answer the original question.
+
+**IMPORTANT**: Always start by explaining your plan (step 0) BEFORE calling any tools. This shows your reasoning process to the user.
 
 ## Efficiency Guidelines ⚡
 

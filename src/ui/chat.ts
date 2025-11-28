@@ -559,9 +559,12 @@ export function getChatUIHTML(): string {
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let buffer = '';
-          let currentContent = '';
+          let initialContent = ''; // Content before tool calls (reasoning)
+          let finalContent = ''; // Content after tool calls (final answer)
           let currentToolCalls = [];
           let toolCallMap = new Map(); // Map toolCallId to tool call object
+          let hasToolCalls = false; // Track if tool calls have been added
+          let finalAnswerMessageId = null; // ID for the final answer message (created after tool calls)
 
           while (true) {
             const { done, value } = await reader.read();
@@ -582,12 +585,37 @@ export function getChatUIHTML(): string {
                 if (line.startsWith('0:')) {
                   // Text chunk
                   const textDelta = line.slice(2);
-                  currentContent += textDelta;
-                  setMessages(prev => prev.map(msg => 
-                    msg.id === assistantMessageId 
-                      ? { ...msg, content: currentContent }
-                      : msg
-                  ));
+                  
+                  // If tool calls exist, this is final answer - create new message bubble
+                  if (hasToolCalls) {
+                    finalContent += textDelta;
+                    // Create final answer message if it doesn't exist
+                    if (!finalAnswerMessageId) {
+                      finalAnswerMessageId = \`msg-final-\${Date.now()}\`;
+                      const finalAnswerMessage = {
+                        id: finalAnswerMessageId,
+                        role: 'assistant',
+                        content: finalContent,
+                        toolCalls: [],
+                      };
+                      setMessages(prev => [...prev, finalAnswerMessage]);
+                    } else {
+                      // Update existing final answer message
+                      setMessages(prev => prev.map(msg => 
+                        msg.id === finalAnswerMessageId 
+                          ? { ...msg, content: finalContent }
+                          : msg
+                      ));
+                    }
+                  } else {
+                    // No tool calls yet - this is initial reasoning
+                    initialContent += textDelta;
+                    setMessages(prev => prev.map(msg => 
+                      msg.id === assistantMessageId 
+                        ? { ...msg, content: initialContent }
+                        : msg
+                    ));
+                  }
                   continue;
                 } else if (line.startsWith('2:')) {
                   // Data chunk
@@ -603,13 +631,42 @@ export function getChatUIHTML(): string {
                 
                 // Handle different message types from AI SDK streaming
                 if (parsed.type === 'text-delta') {
-                  currentContent += parsed.textDelta || '';
-                  setMessages(prev => prev.map(msg => 
-                    msg.id === assistantMessageId 
-                      ? { ...msg, content: currentContent }
-                      : msg
-                  ));
+                  const textDelta = parsed.textDelta || '';
+                  
+                  // If tool calls exist, this is final answer - create new message bubble
+                  if (hasToolCalls) {
+                    finalContent += textDelta;
+                    // Create final answer message if it doesn't exist
+                    if (!finalAnswerMessageId) {
+                      finalAnswerMessageId = \`msg-final-\${Date.now()}\`;
+                      const finalAnswerMessage = {
+                        id: finalAnswerMessageId,
+                        role: 'assistant',
+                        content: finalContent,
+                        toolCalls: [],
+                      };
+                      setMessages(prev => [...prev, finalAnswerMessage]);
+                    } else {
+                      // Update existing final answer message
+                      setMessages(prev => prev.map(msg => 
+                        msg.id === finalAnswerMessageId 
+                          ? { ...msg, content: finalContent }
+                          : msg
+                      ));
+                    }
+                  } else {
+                    // No tool calls yet - this is initial reasoning
+                    initialContent += textDelta;
+                    setMessages(prev => prev.map(msg => 
+                      msg.id === assistantMessageId 
+                        ? { ...msg, content: initialContent }
+                        : msg
+                    ));
+                  }
                 } else if (parsed.type === 'tool-call') {
+                  // Mark that tool calls have been added
+                  hasToolCalls = true;
+                  
                   // New tool call starting
                   const toolCall = {
                     tool: parsed.toolName || parsed.tool,
@@ -658,17 +715,43 @@ export function getChatUIHTML(): string {
                       : 0,
                   } : undefined;
                   
+                  // Update initial reasoning message with tool calls (no usage/model here)
                   setMessages(prev => prev.map(msg => 
                     msg.id === assistantMessageId 
                       ? { 
                           ...msg, 
-                          content: currentContent,
+                          content: initialContent,
                           toolCalls: currentToolCalls,
-                          usage: normalizedUsage,
-                          model: parsed.model,
                         }
                       : msg
                   ));
+                  
+                  // Update final answer message with usage/model (if it exists)
+                  if (finalAnswerMessageId) {
+                    setMessages(prev => prev.map(msg => 
+                      msg.id === finalAnswerMessageId 
+                        ? { 
+                            ...msg, 
+                            content: finalContent,
+                            usage: normalizedUsage,
+                            model: parsed.model,
+                          }
+                        : msg
+                    ));
+                  } else {
+                    // No final answer message - update initial message with usage/model
+                    setMessages(prev => prev.map(msg => 
+                      msg.id === assistantMessageId 
+                        ? { 
+                            ...msg, 
+                            content: initialContent,
+                            toolCalls: currentToolCalls,
+                            usage: normalizedUsage,
+                            model: parsed.model,
+                          }
+                        : msg
+                    ));
+                  }
                 }
               } catch (e) {
                 // Ignore parse errors for non-JSON lines
