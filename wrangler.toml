@@ -2,6 +2,11 @@ name = "cf-rawg"
 main = "src/index.ts"
 compatibility_date = "2024-11-06"
 
+# Increase CPU time limit to 30 seconds (paid tier required)
+# Free tier has 10ms limit which is too low for streaming + tool calls
+[limits]
+cpu_ms = 30000
+
 [env.production]
 name = "cf-rawg"
 
