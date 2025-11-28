@@ -648,13 +648,23 @@ export function getChatUIHTML(): string {
                   }
                 } else if (parsed.type === 'finish') {
                   // Stream finished
+                  // Normalize usage object - convert null to 0
+                  const normalizedUsage = parsed.usage ? {
+                    promptTokens: (parsed.usage.promptTokens != null && typeof parsed.usage.promptTokens === 'number') 
+                      ? parsed.usage.promptTokens 
+                      : 0,
+                    completionTokens: (parsed.usage.completionTokens != null && typeof parsed.usage.completionTokens === 'number')
+                      ? parsed.usage.completionTokens
+                      : 0,
+                  } : undefined;
+                  
                   setMessages(prev => prev.map(msg => 
                     msg.id === assistantMessageId 
                       ? { 
                           ...msg, 
                           content: currentContent,
                           toolCalls: currentToolCalls,
-                          usage: parsed.usage,
+                          usage: normalizedUsage,
                           model: parsed.model,
                         }
                       : msg
@@ -907,7 +917,7 @@ export function getChatUIHTML(): string {
                     <div className="usage">
                       {msg.model && <span>Model: {msg.model} | </span>}
                       {msg.usage && (
-                        <span>Tokens: {msg.usage.promptTokens || 'N/A'} prompt + {msg.usage.completionTokens || 'N/A'} completion</span>
+                        <span>Tokens: {msg.usage.promptTokens != null ? msg.usage.promptTokens : 'N/A'} prompt + {msg.usage.completionTokens != null ? msg.usage.completionTokens : 'N/A'} completion</span>
                       )}
                     </div>
                   )}

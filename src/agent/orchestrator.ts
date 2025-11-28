@@ -53,6 +53,7 @@ export class AgentOrchestrator {
       try {
         this.openaiProvider = createOpenAI({
           apiKey: options.openaiApiKey.trim(),
+          compatibility: 'strict', // Required for token counting in streaming mode
         });
       } catch (error) {
         throw new Error(`Failed to initialize OpenAI provider: ${error instanceof Error ? error.message : String(error)}`);
@@ -203,6 +204,9 @@ export class AgentOrchestrator {
       maxSteps: 10,
     });
 
+    // Capture modelId for use in the stream closure
+    const modelId = this.modelId;
+
     // Create a manual SSE stream that combines text deltas and tool events
     // AI SDK's createDataStreamResponse formats data chunks, but we need to handle text separately
     const encoder = new TextEncoder();
@@ -246,11 +250,57 @@ export class AgentOrchestrator {
 
           // Finalize with finish event
           const finishData = await result;
+          const usage = await finishData.usage;
+          
+          // Extract usage values - handle null, undefined, and different property names
+          // AI SDK usage object should have promptTokens and completionTokens
+          // But they might be null, so we need to explicitly convert null to 0
+          let promptTokens = 0;
+          let completionTokens = 0;
+          
+          if (usage) {
+            // Check for standard property names
+            // Handle null explicitly - if promptTokens is null, use 0
+            const rawPromptTokens = (usage as any).promptTokens ?? (usage as any).prompt_tokens;
+            const rawCompletionTokens = (usage as any).completionTokens ?? (usage as any).completion_tokens;
+            
+            // Convert null/undefined/NaN to 0, but preserve actual 0 values
+            // Explicitly check: if it's null, undefined, or not a valid number, use 0
+            if (rawPromptTokens != null && typeof rawPromptTokens === 'number' && !isNaN(rawPromptTokens) && isFinite(rawPromptTokens)) {
+              promptTokens = rawPromptTokens;
+            } else {
+              promptTokens = 0;
+            }
+            
+            if (rawCompletionTokens != null && typeof rawCompletionTokens === 'number' && !isNaN(rawCompletionTokens) && isFinite(rawCompletionTokens)) {
+              completionTokens = rawCompletionTokens;
+            } else {
+              completionTokens = 0;
+            }
+            
+            // Debug: verify conversion
+            console.log('[AgentOrchestrator] Usage conversion:', {
+              rawPromptTokens,
+              rawCompletionTokens,
+              promptTokens,
+              completionTokens,
+            });
+          }
+          
+          // Ensure we never send null - always send 0 if values are invalid
+          const finalUsage = {
+            promptTokens: promptTokens || 0,
+            completionTokens: completionTokens || 0,
+          };
+          
           const finishDataJson = JSON.stringify({
             type: 'finish',
-            usage: await finishData.usage,
+            usage: finalUsage,
+            model: modelId,
             finishReason: await finishData.finishReason,
           });
+          
+          console.log('[AgentOrchestrator] Sending finish event with usage:', finalUsage);
           controller.enqueue(encoder.encode(`2:${finishDataJson}\n`));
           
           controller.close();
