@@ -4,6 +4,19 @@ export async function handleMCPRequest(
   request: Request,
   server: Server
 ): Promise<Response> {
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
+
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
+  }
+
   if (request.method === 'POST') {
     try {
       const body = await request.text();
@@ -18,7 +31,10 @@ export async function handleMCPRequest(
           }),
           {
             status: 400,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              ...corsHeaders,
+            },
           }
         );
       }
@@ -33,7 +49,10 @@ export async function handleMCPRequest(
           }),
           {
             status: 404,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              ...corsHeaders,
+            },
           }
         );
       }
@@ -51,7 +70,10 @@ export async function handleMCPRequest(
         }),
         {
           status: 200,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          },
         }
       );
     } catch (error) {
@@ -66,7 +88,10 @@ export async function handleMCPRequest(
         }),
         {
           status: 500,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          },
         }
       );
     }
@@ -74,9 +99,15 @@ export async function handleMCPRequest(
 
   if (request.method === 'GET') {
     return new Response('MCP Server is running', {
-      headers: { 'Content-Type': 'text/plain' },
+      headers: { 
+        'Content-Type': 'text/plain',
+        ...corsHeaders,
+      },
     });
   }
 
-  return new Response('Method not allowed', { status: 405 });
+  return new Response('Method not allowed', { 
+    status: 405,
+    headers: corsHeaders,
+  });
 }
