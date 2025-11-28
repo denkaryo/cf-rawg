@@ -637,7 +637,13 @@ export function getChatUIHTML(): string {
       const [isLoading, setIsLoading] = useState(false);
       const [error, setError] = useState(null);
       const [lastFetch, setLastFetch] = useState(null);
-      const [lastCalc, setLastCalc] = useState(null);
+      const [lastCalc, setLastCalc] = useState(null); // kept for backward compatibility
+      // Evaluation history and selection
+      const [calcHistory, setCalcHistory] = useState([]); // [{hash, code, data, serverResult, timestamp, manualCode, manualResult, manualError, manualAttempted, manualRanAt}]
+      const [activeHash, setActiveHash] = useState(null);
+      const [followLatest, setFollowLatest] = useState(true);
+      const followLatestRef = useRef(true);
+      useEffect(() => { followLatestRef.current = followLatest; }, [followLatest]);
 
       const handleInputChange = useCallback((e) => {
         setInput(e.target.value);
@@ -694,6 +700,7 @@ export function getChatUIHTML(): string {
           // Track pending tool args for evaluation capture
           let pendingFetchArgs = null;
           let pendingCalcArgs = null;
+          let pendingCalcHash = null;
 
           while (true) {
             const { done, value } = await reader.read();
@@ -847,12 +854,31 @@ export function getChatUIHTML(): string {
                     // Prepare deterministic data snapshot for manual run
                     try {
                       const snapshot = pendingCalcArgs && pendingCalcArgs.data ? JSON.parse(JSON.stringify(pendingCalcArgs.data)) : null;
-                      setLastCalc({
+                      const hash = snapshot ? hashString(stableStringify(snapshot)) : \`calc-\${Date.now()}\`;
+                      pendingCalcHash = hash;
+                      const entry = {
+                        hash,
                         code: pendingCalcArgs.code || '',
                         data: snapshot,
                         serverResult: null,
-                        snapshotHash: snapshot ? hashString(stableStringify(snapshot)) : null,
                         timestamp: Date.now(),
+                        manualCode: pendingCalcArgs.code || '',
+                        manualResult: undefined,
+                        manualError: null,
+                        manualAttempted: false,
+                        manualRanAt: null,
+                      };
+                      setCalcHistory(prev => [...prev, entry]);
+                      if (followLatestRef.current) {
+                        setActiveHash(hash);
+                      }
+                      // Maintain legacy lastCalc for existing UI references
+                      setLastCalc({
+                        code: entry.code,
+                        data: entry.data,
+                        serverResult: null,
+                        snapshotHash: entry.hash,
+                        timestamp: entry.timestamp,
                       });
                     } catch (e) {
                       // Ignore snapshot errors
@@ -883,7 +909,9 @@ export function getChatUIHTML(): string {
                         // ignore
                       }
                     } else if (toolName.includes('execute_calculation')) {
-                      setLastCalc(prev => prev ? { ...prev, serverResult: parsed.result } : prev);
+                      const resultObj = parsed.result;
+                      setCalcHistory(prev => prev.map(e => e.hash === pendingCalcHash ? { ...e, serverResult: resultObj } : e));
+                      setLastCalc(prev => prev ? { ...prev, serverResult: resultObj } : prev);
                     }
                   } else if (currentToolCalls.length > 0) {
                     // Fallback: update last tool call
@@ -903,7 +931,11 @@ export function getChatUIHTML(): string {
                         timestamp: Date.now(),
                       });
                     } else if (toolName.includes('execute_calculation')) {
-                      setLastCalc(prev => prev ? { ...prev, serverResult: parsed.result } : prev);
+                      const resultObj = parsed.result;
+                      if (pendingCalcHash) {
+                        setCalcHistory(prev => prev.map(e => e.hash === pendingCalcHash ? { ...e, serverResult: resultObj } : e));
+                      }
+                      setLastCalc(prev => prev ? { ...prev, serverResult: resultObj } : prev);
                     }
                   }
                 } else if (parsed.type === 'finish') {
@@ -996,6 +1028,12 @@ export function getChatUIHTML(): string {
         error,
         lastFetch,
         lastCalc,
+        calcHistory,
+        activeHash,
+        setActiveHash,
+        followLatest,
+        setFollowLatest,
+        setCalcHistory,
       };
     }
 
@@ -1059,57 +1097,84 @@ export function getChatUIHTML(): string {
       }
     }
 
-    function EvaluationPanel({ lastFetch, lastCalc }) {
-      const [manualCode, setManualCode] = useState('');
-      const [manualResult, setManualResult] = useState(null);
-      const [manualError, setManualError] = useState(null);
-
-      useEffect(() => {
-        if (lastCalc && lastCalc.code && !manualCode) {
-          setManualCode(lastCalc.code);
-        }
-      }, [lastCalc]);
-
-      const doManualRun = () => {
-        setManualError(null);
-        setManualResult(null);
-        if (!lastCalc || !lastCalc.data) {
-          setManualError('No calculation data available. Trigger a calculation first.');
-          return;
-        }
-        const res = runManualCalculation(manualCode, lastCalc.data);
-        if (res.success) {
-          setManualResult(res.value);
-        } else {
-          setManualError(res.error || 'Manual execution failed');
-        }
-      };
-
-      const copyCode = () => {
+    function formatEvalValue(value) {
+      if (value === undefined) return 'undefined';
+      if (value === null) return 'null';
+      try {
+        if (typeof value === 'string') return value;
+        return JSON.stringify(value, null, 2);
+      } catch (e) {
         try {
-          navigator.clipboard.writeText(manualCode || '');
-        } catch (_) {}
-      };
+          return String(value);
+        } catch {
+          return '[unprintable value]';
+        }
+      }
+    }
+
+    function EvaluationPanel({
+      lastFetch,
+      calcHistory,
+      activeHash,
+      followLatest,
+      onSelectHash,
+      onToggleFollow,
+      onManualCodeChange,
+      onManualRun,
+      onSyncServerCode,
+    }) {
+      const activeEntry = calcHistory.find(e => e.hash === activeHash) || calcHistory[calcHistory.length - 1] || null;
+      const serverValue = activeEntry && activeEntry.serverResult ? activeEntry.serverResult.result : undefined;
+      const comparable = activeEntry && activeEntry.manualAttempted ? (serverValue !== undefined) : false;
+      const matches = comparable ? stableStringify(serverValue) === stableStringify(activeEntry.manualResult) : undefined;
 
       const downloadData = () => {
-        if (!lastCalc || !lastCalc.data) return;
-        const blob = new Blob([JSON.stringify(lastCalc.data, null, 2)], { type: 'application/json' });
+        if (!activeEntry || !activeEntry.data) return;
+        const blob = new Blob([JSON.stringify(activeEntry.data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = \`data-\${lastCalc.snapshotHash || 'snapshot'}.json\`;
+        a.download = \`data-\${activeEntry.hash || 'snapshot'}.json\`;
         a.click();
         URL.revokeObjectURL(url);
       };
 
-      const serverValue = lastCalc && lastCalc.serverResult ? lastCalc.serverResult.result : undefined;
-      const comparable = serverValue !== undefined && manualResult !== null;
-      const matches = comparable ? stableStringify(serverValue) === stableStringify(manualResult) : undefined;
+      const copyCode = () => {
+        try {
+          navigator.clipboard.writeText(activeEntry ? (activeEntry.manualCode || activeEntry.code || '') : '');
+        } catch (_) {}
+      };
 
       return (
         <div className="eval-panel">
           <div className="eval-title">Evaluation</div>
           <div className="eval-subtitle">Inspect fetched data and calculations. Re-run the calculation manually in your browser.</div>
+
+          <div className="eval-section">
+            <h3>Context</h3>
+            <div className="eval-kv">
+              <strong>Snapshot:</strong>&nbsp;
+              {activeEntry ? (activeEntry.hash || 'N/A') : 'N/A'}
+            </div>
+            <div className="eval-actions" style={{ marginTop: '8px' }}>
+              <select
+                onChange={(e) => onSelectHash(e.target.value)}
+                value={activeEntry ? activeEntry.hash : ''}
+                style={{ flex: 1, padding: '6px 8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #e0e0e0' }}
+              >
+                {calcHistory.length === 0 && <option value="">No snapshots</option>}
+                {calcHistory.slice().reverse().map((e) => (
+                  <option key={e.hash} value={e.hash}>
+                    {new Date(e.timestamp).toLocaleTimeString()} — {e.hash}
+                  </option>
+                ))}
+              </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                <input type="checkbox" checked={followLatest} onChange={onToggleFollow} />
+                Follow latest
+              </label>
+            </div>
+          </div>
 
           <div className="eval-section">
             <h3>Fetched Data</h3>
@@ -1139,16 +1204,16 @@ export function getChatUIHTML(): string {
 
           <div className="eval-section">
             <h3>Calculation (server)</h3>
-            {!lastCalc && <div className="eval-kv">No calculation recorded yet. Trigger a calculation to view details.</div>}
-            {lastCalc && (
+            {!activeEntry && <div className="eval-kv">No calculation recorded yet. Trigger a calculation to view details.</div>}
+            {activeEntry && (
               <>
-                <div className="eval-kv"><strong>Snapshot:</strong> {lastCalc.snapshotHash || 'N/A'}</div>
+                <div className="eval-kv"><strong>Snapshot:</strong> {activeEntry.hash || 'N/A'}</div>
                 <div className="eval-kv" style={{ marginTop: '6px' }}><strong>Code (server-used):</strong></div>
-                <div className="eval-pre">{lastCalc.code || ''}</div>
-                {lastCalc.serverResult && (
+                <div className="eval-pre">{activeEntry.code || ''}</div>
+                {activeEntry.serverResult && (
                   <>
                     <div className="eval-kv" style={{ marginTop: '6px' }}><strong>Server result:</strong></div>
-                    <div className="eval-pre">{JSON.stringify(lastCalc.serverResult, null, 2)}</div>
+                    <div className="eval-pre">{JSON.stringify(activeEntry.serverResult, null, 2)}</div>
                   </>
                 )}
               </>
@@ -1159,24 +1224,27 @@ export function getChatUIHTML(): string {
             <h3>Manual calculation (browser)</h3>
             <div className="eval-kv">Runs locally with the same helpers: avg, sum, min, max, groupBy.</div>
             <textarea
-              value={manualCode}
-              onChange={(e) => setManualCode(e.target.value)}
+              value={activeEntry ? (activeEntry.manualCode ?? activeEntry.code ?? '') : ''}
+              onChange={(e) => activeEntry && onManualCodeChange(activeEntry.hash, e.target.value)}
               placeholder="Paste or edit calculation code here..."
               style={{ width: '100%', height: '120px', fontFamily: 'Courier New, monospace', fontSize: '12px', padding: '8px', borderRadius: '6px', border: '1px solid #e0e0e0', marginTop: '8px' }}
             />
             <div className="eval-actions">
-              <button onClick={doManualRun} disabled={!lastCalc || !lastCalc.data}>Calculate manually</button>
-              <button onClick={copyCode} disabled={!manualCode}>Copy code</button>
-              <button onClick={downloadData} disabled={!lastCalc || !lastCalc.data}>Download data.json</button>
+              <button onClick={() => activeEntry && onManualRun(activeEntry.hash, (activeEntry.manualCode ?? activeEntry.code ?? ''), activeEntry.data)} disabled={!activeEntry || !activeEntry.data}>Calculate manually</button>
+              <button onClick={copyCode} disabled={!activeEntry || (!activeEntry.manualCode && !activeEntry.code)}>Copy code</button>
+              <button onClick={downloadData} disabled={!activeEntry || !activeEntry.data}>Download data.json</button>
+              <button onClick={() => activeEntry && onSyncServerCode(activeEntry.hash)} disabled={!activeEntry || !activeEntry.code}>Sync server code</button>
             </div>
-            {manualError && <div className="eval-status fail" style={{ display: 'block' }}>Manual execution error: {manualError}</div>}
-            {manualResult !== null && (
+            {activeEntry && activeEntry.manualAttempted && activeEntry.manualError && (
+              <div className="eval-status fail" style={{ display: 'block' }}>Manual execution error: {activeEntry.manualError}</div>
+            )}
+            {activeEntry && activeEntry.manualAttempted && !activeEntry.manualError && (
               <>
                 <div className="eval-kv" style={{ marginTop: '8px' }}><strong>Manual result:</strong></div>
-                <div className="eval-pre">{JSON.stringify(manualResult, null, 2)}</div>
+                <div className="eval-pre">{formatEvalValue(activeEntry.manualResult)}</div>
               </>
             )}
-            {comparable && (
+            {activeEntry && activeEntry.manualAttempted && comparable && (
               <div className={\`eval-status \${matches ? 'pass' : 'fail'}\`} style={{ display: 'block' }}>
                 {matches ? 'PASS: Manual result matches server result' : 'FAIL: Manual result differs from server result'}
               </div>
@@ -1278,7 +1346,10 @@ export function getChatUIHTML(): string {
       const [expandedInputs, setExpandedInputs] = useState(new Set());
       const [expandedOutputs, setExpandedOutputs] = useState(new Set());
       
-      const { messages, input, handleInputChange, handleSubmit, sendMessage, isLoading, error, lastFetch, lastCalc } = useChat({
+      const { 
+        messages, input, handleInputChange, handleSubmit, sendMessage, isLoading, error, 
+        lastFetch, lastCalc, calcHistory, activeHash, setActiveHash, followLatest, setFollowLatest, setCalcHistory 
+      } = useChat({
         api: '/api/chat',
         onError: (error) => {
           console.error('Chat error:', error);
@@ -1492,7 +1563,36 @@ export function getChatUIHTML(): string {
               </div>
             </div>
             <div className="right-pane">
-              <EvaluationPanel lastFetch={lastFetch} lastCalc={lastCalc} />
+              <EvaluationPanel 
+                lastFetch={lastFetch}
+                calcHistory={calcHistory}
+                activeHash={activeHash}
+                followLatest={followLatest}
+                onSelectHash={setActiveHash}
+                onToggleFollow={() => setFollowLatest(v => !v)}
+                onManualCodeChange={(hash, code) => {
+                  // Persist manual code per snapshot
+                  // eslint-disable-next-line no-undef
+                  setCalcHistory(prev => prev.map(e => e.hash === hash ? { ...e, manualCode: code } : e));
+                }}
+                onManualRun={(hash, code, data) => {
+                  const res = runManualCalculation(code, data);
+                  // eslint-disable-next-line no-undef
+                  setCalcHistory(prev => prev.map(e => e.hash === hash 
+                    ? { 
+                        ...e, 
+                        manualAttempted: true, 
+                        manualError: res.success ? null : (res.error || 'Manual execution failed'), 
+                        manualResult: res.success ? res.value : undefined, 
+                        manualRanAt: Date.now() 
+                      } 
+                    : e));
+                }}
+                onSyncServerCode={(hash) => {
+                  // eslint-disable-next-line no-undef
+                  setCalcHistory(prev => prev.map(e => e.hash === hash ? { ...e, manualCode: e.code || '' } : e));
+                }}
+              />
             </div>
           </div>
         </div>
