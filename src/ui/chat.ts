@@ -673,6 +673,7 @@ export function getChatUIHTML(): string {
 
     function ChatApp() {
       const messagesEndRef = useRef(null);
+      const inputRef = useRef(null);
       const [expandedToolCalls, setExpandedToolCalls] = useState(new Set());
       
       const { messages, input, handleInputChange, handleSubmit, sendMessage, isLoading, error } = useChat({
@@ -681,6 +682,13 @@ export function getChatUIHTML(): string {
           console.error('Chat error:', error);
         },
       });
+
+      // Auto-focus input after messages update (when loading completes)
+      useEffect(() => {
+        if (!isLoading && inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, [isLoading, messages]);
 
       const toggleToolCall = useCallback((messageIdx, callIdx) => {
         const key = \`\${messageIdx}-\${callIdx}\`;
@@ -832,12 +840,14 @@ export function getChatUIHTML(): string {
             <div className="input-area">
               <form onSubmit={handleSubmit}>
                 <input
+                  ref={inputRef}
                   type="text"
                   value={input}
                   onChange={handleInputChange}
                   onKeyPress={handleKeyPress}
                   placeholder="Ask a question about video games..."
                   disabled={isLoading}
+                  autoFocus
                 />
                 <button type="submit" disabled={isLoading || !input.trim()}>
                   Send
